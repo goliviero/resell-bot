@@ -37,3 +37,26 @@ Bot Python de detection de bonnes affaires livres. Scan 5 plateformes (CaL, Momo
 - `config/settings.yaml` — timings, HTTP, database path, notifications
 - `config/watchlists/livres.yaml` — search terms, ISBNs, filters
 - `.env` — TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID
+
+## Quick Commands
+
+```bash
+python -m resell_bot --once        # Single scan
+python -m resell_bot               # Continuous mode
+python -m pytest tests/ -v         # 44 tests
+python scripts/activity_log.py <action> "<detail>"  # Log activity
+python scripts/setup_telegram.py   # Configure Telegram bot
+```
+
+## Activity Logging
+
+- `docs/activity_log.jsonl` — append-only session log
+- `docs/decisions.md` — DEC-XXX [ACTIVE], date, decision, rationale
+- `scripts/activity_log.py` — symlink to dotfiles (DEC-002 dotfiles)
+
+## Rules
+
+- Never commit `.env`, `data/*.db`, `.venv/`
+- One scraper per file, all inherit from `scrapers/base.py`
+- All HTTP goes through `utils/http_client.py` (never raw httpx)
+- Prices in euros (float), ISBNs normalized to ISBN-13 via `utils/isbn.py`
