@@ -21,11 +21,11 @@ Au lieu de verifier les 1380 livres a la meme frequence, le bot utilise un syste
 
 | Tier | Livres concernes | Frequence de scan | Exemple |
 |------|-----------------|-------------------|---------|
-| **HOT** | ~25 livres deja vus disponibles plusieurs fois | Toutes les **2 minutes** | Un livre qui a ete restocke 3 fois |
-| **WARM** | ~quelques centaines, vus une fois | Toutes les **20 minutes** | Un livre apparu une fois puis disparu |
-| **COLD** | ~1000+, jamais vus disponibles | Toutes les **4 heures** | Un livre rare jamais en stock chez Momox |
+| **HOT** | ~200 livres a haute valeur (>= 50€) + restockes + vus recemment | Toutes les **2 minutes** (~20s de scan) | Le Livre Rouge (300€), Antares integrale (100€) |
+| **WARM** | ~900 livres valeur moyenne (20-50€) + vus une fois | Toutes les **20 minutes** | Un livre a 30€ apparu une fois |
+| **COLD** | ~300 livres basse valeur (< 20€), jamais vus | Toutes les **4 heures** | Un livre a 10€ jamais en stock |
 
-La logique : un livre restocke regulierement a beaucoup plus de chances de reapparaitre qu'un livre jamais vu. Inutile de gaspiller des requetes API sur les livres fantomes.
+La logique : les livres les plus chers sont aussi les plus rares. Quand le Livre Rouge a 300€ apparait sur Momox, on a quelques minutes pour l'acheter avant qu'un autre sniper le prenne. Un livre a 8€ peut attendre.
 
 ### Quand une affaire est detectee
 

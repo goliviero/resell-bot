@@ -130,22 +130,26 @@ class ScanScheduler:
             platform = scraper.platform_name
 
             # Get ISBNs for this tier
-            if tier == "cold":
-                # Cold tier also includes unchecked ISBNs
-                isbns = self.db.get_isbns_by_priority(platform, "cold")
+            isbns = self.db.get_isbns_by_priority(platform, tier)
+            isbn_list = [
+                (r["isbn"], r["max_buy_price"])
+                for r in isbns
+                if r.get("max_buy_price") is not None
+            ]
+
+            # Unchecked ISBNs: dispatch to the right tier based on value
+            if tier in ("hot", "cold"):
                 unchecked = self.db.get_unchecked_isbns(platform)
-                isbn_list = [
-                    (r["isbn"], r["max_buy_price"])
-                    for r in isbns + unchecked
-                    if r.get("max_buy_price") is not None
-                ]
-            else:
-                isbns = self.db.get_isbns_by_priority(platform, tier)
-                isbn_list = [
-                    (r["isbn"], r["max_buy_price"])
-                    for r in isbns
-                    if r.get("max_buy_price") is not None
-                ]
+                for r in unchecked:
+                    mbp = r.get("max_buy_price")
+                    if mbp is None:
+                        continue
+                    # High-value unchecked → scan in HOT tier
+                    if mbp >= 50.0 and tier == "hot":
+                        isbn_list.append((r["isbn"], mbp))
+                    # Low-value unchecked → scan in COLD tier
+                    elif mbp < 50.0 and tier == "cold":
+                        isbn_list.append((r["isbn"], mbp))
 
             if not isbn_list:
                 continue

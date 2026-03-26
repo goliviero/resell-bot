@@ -40,6 +40,7 @@
             <div style="margin-top: 0.5rem;">
                 <button type="button" class="btn btn-sm"
                         hx-post="/settings/test-discord"
+                        hx-include="[name='discord_webhook_url']"
                         hx-target="#discord-test-result"
                         hx-swap="innerHTML">Tester</button>
                 <span id="discord-test-result" style="margin-left: 0.5rem; font-size: 0.8rem;"></span>

@@ -1,1 +1,2 @@
 {"ts": "2026-03-26T21:51:37", "session_id": "2026-03-26T21", "action": "feat", "detail": "Medimops JSON API scraper (momox_api.py) — 1380 ISBNs scanned in 1m50s vs 80min before. Priority tiers HOT/WARM/COLD + parallel scanning with asyncio.Semaphore(3). 2 live deals found on first scan.", "result": "ok"}
+{"ts": "2026-03-26T22:48:52", "session_id": "2026-03-26T22", "action": "feat", "detail": "value-based priority scoring: 198 HOT (>=50€) / 896 WARM (>=20€) / 286 COLD, Discord test fix", "result": "ok"}

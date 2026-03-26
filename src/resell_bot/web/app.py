@@ -207,10 +207,13 @@ async def save_settings(
 
 
 @app.post("/settings/test-discord", response_class=HTMLResponse)
-async def test_discord(request: Request):
-    """Send a test message to Discord webhook."""
-    db = get_db()
-    webhook_url = db.get_notification_setting("discord_webhook_url")
+async def test_discord(request: Request, discord_webhook_url: str = Form("")):
+    """Send a test message to Discord webhook (reads URL from form, not DB)."""
+    webhook_url = discord_webhook_url.strip()
+    if not webhook_url:
+        # Fallback to DB
+        db = get_db()
+        webhook_url = db.get_notification_setting("discord_webhook_url")
     if not webhook_url:
         return HTMLResponse('<span style="color: var(--red);">Webhook non configure</span>')
 

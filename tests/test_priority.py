@@ -6,12 +6,32 @@ from resell_bot.priority import compute_priority
 
 
 class TestComputePriority:
+    def test_high_value_book_always_hot(self):
+        """Books worth >= 50€ (max_buy_price) → HOT always, even if never seen."""
+        assert compute_priority(
+            status="unknown",
+            last_price=None,
+            max_buy_price=55.0,
+            times_available=0,
+            last_changed_at=None,
+        ) == "hot"
+
+    def test_high_value_never_seen_still_hot(self):
+        """Rare expensive book never in stock → still HOT (must not miss restock)."""
+        assert compute_priority(
+            status="unavailable",
+            last_price=None,
+            max_buy_price=100.0,
+            times_available=0,
+            last_changed_at=None,
+        ) == "hot"
+
     def test_high_restock_count_is_hot(self):
         """Books restocked 2+ times → HOT regardless of other factors."""
         assert compute_priority(
             status="unavailable",
             last_price=None,
-            max_buy_price=10.0,
+            max_buy_price=5.0,
             times_available=2,
             last_changed_at=None,
         ) == "hot"
@@ -37,7 +57,7 @@ class TestComputePriority:
             times_available=1,
             last_changed_at=old,
         )
-        # Should be warm (seen once) or hot (if high margin), not cold
+        # 10€ max_buy_price >= 8€ MEDIUM_VALUE → at least WARM
         assert result in ("hot", "warm")
 
     def test_high_margin_is_hot(self):
@@ -54,8 +74,18 @@ class TestComputePriority:
         """Margin 2-5€ → WARM."""
         assert compute_priority(
             status="unavailable",
-            last_price=7.0,
-            max_buy_price=10.0,
+            last_price=5.0,
+            max_buy_price=7.5,
+            times_available=0,
+            last_changed_at=None,
+        ) == "warm"
+
+    def test_medium_value_is_warm(self):
+        """Books worth 20-50€ → WARM even with no price data."""
+        assert compute_priority(
+            status="unknown",
+            last_price=None,
+            max_buy_price=30.0,
             times_available=0,
             last_changed_at=None,
         ) == "warm"
@@ -64,28 +94,18 @@ class TestComputePriority:
         """Books seen available at least once → WARM."""
         assert compute_priority(
             status="unavailable",
-            last_price=9.0,
-            max_buy_price=10.0,
+            last_price=6.0,
+            max_buy_price=7.0,
             times_available=1,
             last_changed_at=None,
         ) == "warm"
 
-    def test_never_seen_low_margin_is_cold(self):
-        """Never seen, low margin → COLD."""
+    def test_low_value_never_seen_is_cold(self):
+        """Low-value book (< 8€), never seen → COLD."""
         assert compute_priority(
             status="unavailable",
-            last_price=9.5,
-            max_buy_price=10.0,
-            times_available=0,
-            last_changed_at=None,
-        ) == "cold"
-
-    def test_no_price_data_is_cold(self):
-        """No price data at all → COLD."""
-        assert compute_priority(
-            status="unknown",
             last_price=None,
-            max_buy_price=10.0,
+            max_buy_price=5.0,
             times_available=0,
             last_changed_at=None,
         ) == "cold"
