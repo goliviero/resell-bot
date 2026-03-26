@@ -1,9 +1,11 @@
 scan:
-  # Continuous loop: 1 request at a time, ~1 req/s = safe for 1 IP
-  # Full cycle ~23 min for 1380 ISBNs. Add VPS to divide.
+  # Continuous loop with parallel workers via Medimops JSON API.
+  # 3 workers × 0.3s delay = ~10 req/s peak — safe for API (no Cloudflare).
+  # Full cycle ~3 min for 1380 ISBNs. Add VPS to divide further.
+  max_workers: 3
   delay_between_requests:
-    min_seconds: 0.8
-    max_seconds: 1.2
+    min_seconds: 0.2
+    max_seconds: 0.4
 
 http:
   timeout_seconds: 15

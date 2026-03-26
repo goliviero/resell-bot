@@ -4,7 +4,7 @@
 
 ## Summary
 
-Bot Python de sniping de livres sous-cotés. Scanne les plateformes d'achat (Momox Shop, Recyclivre, Rakuten, FNAC, eBay, Amazon) pour trouver des livres en vente sous le prix max d'achat défini dans la watchlist CaL. Alerte via Telegram + dashboard web.
+Bot Python de sniping de livres sous-cotés. Scanne les plateformes d'achat (Momox Shop, Recyclivre, Rakuten, FNAC, eBay, Amazon) pour trouver des livres en vente sous le prix max d'achat défini dans la watchlist CaL. Alerte via Telegram/Discord/Email + dashboard web. Scan continu parallèle : tous les 1380 ISBNs vérifiés toutes les ~3 min via l'API Medimops.
 
 ## Stack
 
@@ -17,11 +17,13 @@ Bot Python de sniping de livres sous-cotés. Scanne les plateformes d'achat (Mom
 
 - `core/models.py` — Listing, ReferencePrice, Alert dataclasses
 - `core/database.py` — SQLite wrapper (no ORM)
-- `core/notifier.py` — Telegram via raw Bot API (httpx)
+- `core/notifier.py` — Multi-channel hub: Telegram + Discord + Email
 - `core/price_engine.py` — Deal detection: listing price vs max buy price
 - `scrapers/base.py` — ABC: `get_offer(isbn) -> Listing | None`
-- `scrapers/momox.py` — Momox Shop (momox-shop.fr) — IMPLEMENTED
+- `scrapers/momox_api.py` — Momox Shop via Medimops JSON API — PRIMARY
+- `scrapers/momox.py` — Momox Shop HTML fallback — ARCHIVE
 - `scrapers/{rakuten,recyclivre,fnac,ebay,amazon}.py` — Stubs
+- `scheduler.py` — Continuous parallel scan loop (3 workers, Semaphore)
 - `utils/http_client.py` — Shared async client (curl_cffi, retry, rate limit, UA rotation)
 - `utils/isbn.py` — ISBN-10/13 validation + conversion
 - `web/app.py` — FastAPI + HTMX dashboard
@@ -45,7 +47,7 @@ Bot Python de sniping de livres sous-cotés. Scanne les plateformes d'achat (Mom
 python -m resell_bot --once        # Single scan
 python -m resell_bot               # Continuous mode
 python -m resell_bot --dashboard   # Dashboard only
-python -m pytest tests/ -v         # 68 tests
+python -m pytest tests/ -v         # 94 tests
 python scripts/import_cal_watchlist.py docs/bdd_franck_26032026.csv  # Import CaL CSV
 python scripts/setup_telegram.py   # Configure Telegram bot
 ```

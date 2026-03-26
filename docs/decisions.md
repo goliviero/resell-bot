@@ -60,11 +60,12 @@
 
 ---
 
-## DEC-008 — Priority tiers HOT/WARM/COLD for scan scheduling [ACTIVE]
+## DEC-008 — Priority tiers HOT/WARM/COLD for scan scheduling [SUPERSEDED by DEC-011]
 
 **Date:** 2026-03-26
 **Decision:** ISBNs are classified into priority tiers: HOT (scan every 2 min), WARM (every 20 min), COLD (every 4 hours). Priorities auto-computed based on availability history, margin potential, and restock frequency.
 **Rationale:** Scanning all 1380 ISBNs at the same frequency wastes time on books that are never available. First scan: 25 books available (HOT), 1355 never seen (COLD). HOT tier scans in ~3s, giving near-real-time alerting for the books that matter.
+**Superseded:** Replaced by DEC-011 (continuous parallel scan). With 3 workers and reduced delays on the Medimops API, a full cycle of ALL 1380 ISBNs completes in ~3 min — making tiers unnecessary.
 
 ---
 
@@ -81,3 +82,11 @@
 **Date:** 2026-03-26
 **Decision:** Dashboard scan status uses HTMX polling (every 5s) instead of WebSocket push.
 **Rationale:** HTMX is already in the stack, zero additional dependency. 5s polling is acceptable for monitoring (not for trading). WebSocket could be added later if sub-second dashboard updates are needed.
+
+---
+
+## DEC-011 — Continuous parallel scan over tier-based scheduling [ACTIVE]
+
+**Date:** 2026-03-26
+**Decision:** Replace HOT/WARM/COLD tier-based scheduling with a continuous parallel loop that scans ALL 1380 ISBNs every ~3 minutes. 3 asyncio workers with Semaphore, 0.2-0.4s delay between requests per worker (~10 req/s).
+**Rationale:** The Medimops JSON API is lightweight (~80ms, no Cloudflare) and handles 10 req/s without issue. With 3 workers, a full cycle completes in ~3 min — which means every ISBN is checked every 3 min regardless of value. This eliminates the risk of missing a rare book because it was classified COLD. Supersedes DEC-008.

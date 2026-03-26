@@ -15,17 +15,19 @@ Le bot surveille **1380 ISBN de livres** issus d'un export CSV de Chasse aux Liv
 
 Le bot interroge Momox Shop (momox-shop.fr) via leur **API interne JSON** — celle que leur propre site web utilise en coulisses. C'est comme demander a un libraire : "Tu as ce livre en stock ? A combien ?" Sauf qu'au lieu d'aller physiquement au comptoir (charger la page HTML complete), on appelle directement le systeme informatique du magasin. Resultat : la reponse arrive en **~80 millisecondes** au lieu de ~2 secondes.
 
-### Le systeme de priorites
+### Scan en boucle continue parallele
 
-Au lieu de verifier les 1380 livres a la meme frequence, le bot utilise un systeme de **tiers de priorite** qui concentre l'attention sur les livres les plus susceptibles d'apparaitre :
+Le bot scanne les **1380 ISBN en boucle infinie** avec **3 workers paralleles**. Chaque worker fait une requete API, attend 0.2-0.4 secondes, puis passe au suivant. L'ordre des ISBN est melange a chaque cycle pour eviter les patterns detectables.
 
-| Tier | Livres concernes | Frequence de scan | Exemple |
-|------|-----------------|-------------------|---------|
-| **HOT** | ~200 livres a haute valeur (>= 50€) + restockes + vus recemment | Toutes les **2 minutes** (~20s de scan) | Le Livre Rouge (300€), Antares integrale (100€) |
-| **WARM** | ~900 livres valeur moyenne (20-50€) + vus une fois | Toutes les **20 minutes** | Un livre a 30€ apparu une fois |
-| **COLD** | ~300 livres basse valeur (< 20€), jamais vus | Toutes les **4 heures** | Un livre a 10€ jamais en stock |
+| Metrique | Valeur |
+|----------|--------|
+| Workers paralleles | 3 |
+| Delai entre requetes | 0.2-0.4 secondes par worker |
+| Debit effectif | ~10 requetes/seconde |
+| Cycle complet (1380 ISBNs) | **~3 minutes** |
+| Latence max de detection | **3 minutes** (pire cas = livre verifie juste avant le restock) |
 
-La logique : les livres les plus chers sont aussi les plus rares. Quand le Livre Rouge a 300€ apparait sur Momox, on a quelques minutes pour l'acheter avant qu'un autre sniper le prenne. Un livre a 8€ peut attendre.
+La logique : avec une API JSON a ~80ms/requete et sans Cloudflare, on peut se permettre un debit plus agressif. 10 req/s est raisonnable pour une API backend. En scannant TOUS les ISBN a chaque cycle (pas de tiers), on ne rate aucun livre — meme les livres bon marche sont verifies toutes les 3 minutes.
 
 ### Quand une affaire est detectee
 
@@ -41,11 +43,11 @@ Le dashboard web (accessible en local) affiche :
 
 - **Toutes les alertes** (bonnes affaires detectees), triees par date
 - **Tous les livres** de la watchlist avec leur statut de disponibilite (vert = dispo, rouge = indisponible)
-- **Progression du scan en temps reel** : quel tier est en cours, combien de livres scannes, combien de deals trouves
+- **Progression du scan en temps reel** : cycle en cours, combien de livres scannes, combien de deals trouves
 
 ### Performance
 
-Un scan complet des **1380 ISBN prend environ 1 minute 50 secondes** — contre environ **80 minutes** avec l'ancienne methode de scraping HTML. C'est un gain de **x43** grace a l'API JSON.
+Un cycle complet des **1380 ISBN prend environ 3 minutes** avec 3 workers paralleles — contre environ **80 minutes** avec l'ancienne methode de scraping HTML. C'est un gain de **x27** grace a l'API JSON + parallelisme.
 
 ---
 
@@ -111,10 +113,10 @@ src/resell_bot/
 │   ├── base.py          # ABC: get_offer(isbn) -> Listing | None
 │   ├── momox_api.py     # MomoxApiScraper — API JSON Medimops (ACTIF)
 │   └── momox.py         # MomoxShopScraper — ancien scraping HTML (ARCHIVE)
-├── scheduler.py         # ScanScheduler — orchestration par tiers de priorite
-├── priority.py          # compute_priority() — scoring HOT/WARM/COLD
+├── scheduler.py         # ScanScheduler — boucle continue parallele (Semaphore)
 ├── core/
 │   ├── database.py      # SQLite — table isbn_availability pour le tracking
+│   ├── notifier.py      # Hub multi-canal: Telegram + Discord + Email
 │   └── models.py        # Listing, Alert dataclasses
 └── web/
     └── app.py           # FastAPI + HTMX — endpoint /scan-status (auto-refresh 5s)
@@ -142,40 +144,22 @@ CONDITION_MAP = {
 
 ### `scheduler.py` — ScanScheduler
 
-Le scheduler fonctionne ainsi :
+Le scheduler fonctionne en **boucle continue parallele** :
 
-1. **APScheduler** execute `run_scan()` **toutes les 30 secondes**
-2. `run_scan()` parcourt les tiers (`hot`, `warm`, `cold`) et verifie si l'intervalle de chaque tier est depasse
-3. Si un tier est du, `_scan_tier(tier)` recupere tous les ISBN de ce tier et lance les scans en parallele
-4. **`asyncio.Semaphore(3)`** limite a 3 requetes API simultanees
-5. Chaque scan : appel API → mise a jour `isbn_availability` → verification deal → sauvegarde alerte si applicable
+1. `run_continuous()` tourne en boucle infinie, cycle apres cycle
+2. A chaque cycle : recupere tous les ISBN de `reference_prices`, melange l'ordre
+3. Lance les scans via `asyncio.create_task()` — **`asyncio.Semaphore(3)`** limite a 3 requetes API simultanees
+4. Chaque worker : appel API → mise a jour `isbn_availability` → verification deal → sauvegarde alerte si applicable
+5. `asyncio.Lock` protege les ecritures d'alertes (DB + notifications) entre workers concurrents
 
 ```python
-# Intervalles par defaut (config/settings.yaml)
-DEFAULT_INTERVALS = {
-    "hot": 120,      # 2 min
-    "warm": 1200,    # 20 min
-    "cold": 14400,   # 4 hours
-}
-DEFAULT_MAX_WORKERS = 3
+# Config par defaut (config/settings.yaml)
+max_workers = 3          # Workers paralleles
+delay_min = 0.2          # Delai entre requetes par worker
+delay_max = 0.4          # ~10 req/s effectif
 ```
 
 Le statut de scan en direct est expose via `self.scan_status` (dict) et consomme par le dashboard via l'endpoint `/scan-status`.
-
-### `priority.py` — Systeme de priorite
-
-La fonction `compute_priority()` attribue un tier selon ces criteres (evalues dans l'ordre) :
-
-| Critere | Tier | Code |
-|---------|------|------|
-| `times_available >= 2` (restocke plusieurs fois) | HOT | `HOT_RESTOCK_COUNT = 2` |
-| Status `available` et vu dans les 48 dernieres heures | HOT | `RECENTLY_AVAILABLE_HOURS = 48` |
-| Marge potentielle >= 5 euros | HOT | `HOT_MARGIN_THRESHOLD = 5.0` |
-| Marge potentielle >= 2 euros | WARM | `WARM_MARGIN_THRESHOLD = 2.0` |
-| `times_available >= 1` (vu dispo au moins une fois) | WARM | — |
-| Tout le reste | COLD | — |
-
-`refresh_priorities()` recalcule les priorites de tous les ISBN apres chaque cycle de scan.
 
 ### `core/database.py` — Table isbn_availability
 
@@ -220,13 +204,13 @@ https://www.momox-shop.fr/recherche/{isbn}
 
 | Parametre | Valeur | Source |
 |-----------|--------|--------|
-| Delai entre requetes | 0.3 - 0.8 secondes | `config/settings.yaml` |
-| Workers paralleles max | 3 | `asyncio.Semaphore(3)` |
-| Tier HOT : frequence | Toutes les 2 min (~25 ISBN) | ~25 appels API / 2 min |
-| Tier WARM : frequence | Toutes les 20 min | ~quelques centaines d'appels |
-| Tier COLD : frequence | Toutes les 4 heures | ~1380 appels (scan complet) |
+| Workers paralleles | 3 | `asyncio.Semaphore(3)` |
+| Delai entre requetes (par worker) | 0.2 - 0.4 secondes | `config/settings.yaml` |
+| Debit effectif | ~10 req/s | 3 workers / 0.3s avg |
+| Cycle complet | ~3 min | 1380 ISBN / 10 req/s |
+| Requetes par cycle | 1380 | Tous les ISBN a chaque cycle |
 
-A ces rythmes, **aucun ban IP observe**. L'API Medimops ne semble pas avoir de rate limiting agressif pour les volumes que nous generons.
+A ~10 req/s, **aucun ban IP observe**. L'API Medimops est un backend JSON concu pour le trafic programmatique — pas de Cloudflare, pas de rate limiting agressif pour ces volumes.
 
 ### DISTINCTION IMPORTANTE
 
@@ -244,23 +228,24 @@ Notre modele est l'achat sur les plateformes pour revendre sur Vinted/Leboncoin.
 ```
 1. CaL CSV ──→ import_cal_watchlist.py ──→ reference_prices (1380 ISBN + max buy price)
                                                     │
-2. APScheduler (toutes les 30s) ──→ run_scan()      │
-                                         │          │
-3. Pour chaque tier echu :               ▼          │
-   get_isbns_by_priority(tier) ◄── isbn_availability ◄── JOIN ── reference_prices
+2. run_continuous() ── boucle infinie               │
+         │                                          │
+         ▼                                          │
+3. get_all_reference_isbns() ◄── reference_prices ──┘
+   + shuffle (ordre aleatoire)
          │
          ▼
-4. Scan parallele (Semaphore(3)) :
-   MomoxApiScraper.get_offer(isbn) ──→ api.medimops.de/v1/search
+4. Scan parallele (Semaphore(3), 3 workers) :
+   _scan_worker(isbn) ──→ MomoxApiScraper.get_offer(isbn) ──→ api.medimops.de/v1/search
          │
          ▼
 5. Resultat :
    ├── Disponible → upsert_availability(isbn, True, price)
-   │                  └── Si price <= max_buy_price → save_alert() → Telegram + Dashboard
+   │                  └── Si price <= max_buy_price → save_alert() → Telegram/Discord/Email
    └── Indisponible → upsert_availability(isbn, False)
          │
          ▼
-6. refresh_priorities() ──→ recalcul HOT/WARM/COLD pour le prochain cycle
+6. Cycle complet (~3 min) → recommence immediatement
          │
          ▼
 7. Dashboard (/scan-status) ──→ HTMX poll toutes les 5s ──→ affichage en temps reel
@@ -290,31 +275,32 @@ Chasse aux Livres surveille **des millions d'ISBN** sur **6+ plateformes** (Amaz
 
 ### Notre avantage competitif
 
-Pour nos 1380 ISBN sur Momox, **on peut battre CaL en vitesse** :
+Pour nos 1380 ISBN sur Momox, **on bat CaL en vitesse** :
 
 | | CaL | resell-bot |
 |--|-----|------------|
 | ISBN surveilles | Millions | 1380 |
 | Plateformes | 6+ | 1 (Momox, pour l'instant) |
-| Frequence Momox | Probablement 15-60 min | 2 min (tier HOT) |
-| Infrastructure | Cluster multi-serveurs | Un seul PC |
+| Frequence scan (chaque ISBN) | Probablement 15-60 min | **~3 min** (cycle complet) |
+| Infrastructure | Cluster multi-serveurs | Un seul PC, 1 IP |
+| Debit API | Inconnu | ~10 req/s |
 
-CaL doit repartir ses ressources sur des millions d'ISBN et plusieurs plateformes. Nous, on concentre tout sur 1380 ISBN. Sur Momox specifiquement, **notre tier HOT de 2 minutes bat probablement la latence de CaL** qui doit scanner des centaines de milliers de livres sur cette meme plateforme.
+CaL doit repartir ses ressources sur des millions d'ISBN et plusieurs plateformes. Nous, on concentre tout sur 1380 ISBN avec un cycle complet toutes les ~3 minutes. **Chaque ISBN est verifie toutes les 3 minutes** — CaL ne peut probablement pas faire mieux sur sa watchlist Momox vu le nombre d'ISBN qu'ils gerent.
 
 **Avantage CaL** : couverture (beaucoup de plateformes, beaucoup d'ISBN).
-**Notre avantage** : vitesse de reaction sur notre watchlist specifique.
+**Notre avantage** : vitesse de reaction sur notre watchlist specifique — ~3 min vs probablement 15-60 min chez CaL.
 
 ---
 
 ## 4. Ameliorations possibles pour reduire la latence
 
-### 1. Reduire l'intervalle HOT a 60 secondes (au lieu de 120s)
+### 1. Augmenter les workers paralleles a 5 (au lieu de 3)
 
-Avec ~25 ISBN en tier HOT, ca represente ~25 appels API par minute. L'API Medimops gere sans probleme. Gain : detection 2x plus rapide des restocks.
+`asyncio.Semaphore(5)` au lieu de `Semaphore(3)`. L'API encaisse bien. Cycle passerait de ~3 min a ~2 min. A tester en surveillant les eventuels 429.
 
-### 2. Augmenter les workers paralleles a 5 (au lieu de 3)
+### 2. Reduire les delais a 0.1-0.2s (au lieu de 0.2-0.4s)
 
-`asyncio.Semaphore(5)` au lieu de `Semaphore(3)`. L'API encaisse bien, et ca reduit le temps de scan d'un tier proportionnellement. Un scan complet passerait de ~1min50 a ~1min10.
+Avec 5 workers et 0.15s de delai moyen, on atteindrait ~33 req/s. Cycle ~40 secondes. Agressif mais l'API Medimops n'a pas montre de rate limiting.
 
 ### 3. WebSocket push au lieu du polling HTMX
 
@@ -428,4 +414,4 @@ Amazon est le site le plus difficile a scraper. Le scraping direct est quasi-imp
 
 ---
 
-> *Ce document decrit l'etat du systeme au 2026-03-26. Les valeurs (nombre d'ISBN, latences, tiers) sont basees sur les mesures reelles avec l'export CaL de Franck.*
+> *Ce document decrit l'etat du systeme au 2026-03-26. Les valeurs (nombre d'ISBN, latences, debit) sont basees sur les mesures reelles avec l'export CaL de Franck. Le systeme utilise un scan continu parallele (pas de tiers de priorite).*

@@ -10,11 +10,11 @@
 - S5: ISBN validation + normalisation (ISBN-10/13 conversion, text extraction)
 - S6: Dashboard web (FastAPI + HTMX) avec workflow new→seen→bought/ignored
 - S7: Architecture extensible: BaseScraper ABC, un fichier par plateforme
-- S8: Telegram notifications via raw API (zero wrapper libs)
+- S8: Multi-channel notifications: Telegram + Discord webhook + Email SMTP
 - S9: Medimops JSON API (~80ms vs ~2s HTML) — game changer
-- S10: Priority system reduces HOT scan to ~3 seconds for 25 books
-- S11: 92 tests passing
-- S12: Live scan dashboard with progress tracking
+- S10: Continuous parallel scan: ALL 1380 ISBNs every ~3 min (3 workers, ~10 req/s)
+- S11: 94 tests passing
+- S12: Live scan dashboard with progress tracking + daily digest at 08:00
 
 ## Weaknesses
 - W1: Seul Momox Shop est implémenté (5 autres plateformes en stubs)
@@ -32,7 +32,8 @@
 - O5: Étendre au-delà des livres (vinyles, jeux vidéo, BD)
 - O6: Alertes push mobile via Telegram → réaction rapide
 - O7: Medimops API may expose other useful endpoints
-- O8: Reduce HOT interval to 60s for near-real-time
+- O8: Increase workers to 5 + reduce delays → cycle ~1-2 min
+- O9: VPS scaling (3 OVH VPS → cycle ~1 min for ~11€/month)
 
 ## Threats
 - T1: Cloudflare/anti-bot évoluent → scrapers cassés
@@ -54,9 +55,8 @@
 | **Amazon** | Très strict | Très agressif | Quasi impossible sans proxy | Très élevé | **Très difficile** |
 
 ### Recommandation anti-ban
-- Rate limit: 2-5 secondes entre chaque requête
+- API JSON (Medimops): 0.2-0.4s entre requêtes, 3 workers → ~10 req/s — safe
+- HTML scraping (autres plateformes): 1-2s entre requêtes, 1 worker — conservateur
 - UA rotation: 10 User-Agents différents
-- Ne pas scanner les 1380 ISBNs sur chaque plateforme à chaque cycle
-  → Prioritiser: scanner les X ISBNs les plus "rentables" en premier
-  → Randomiser l'ordre pour éviter les patterns détectables
+- Randomiser l'ordre des ISBNs à chaque cycle pour éviter les patterns détectables
 - Proxy rotation si ban IP (futur P2)

@@ -87,13 +87,6 @@
             </td>
             <td>
                 <strong>{{ book.title[:60] }}{% if book.title and book.title|length > 60 %}...{% endif %}</strong>
-                {% if book.priority %}
-                <span class="badge" style="margin-left: 0.3rem; font-size: 0.6rem; padding: 0.1rem 0.3rem;
-                    {% if book.priority == 'hot' %}background: rgba(239,68,68,0.15); color: var(--red);
-                    {% elif book.priority == 'warm' %}background: rgba(245,158,11,0.15); color: var(--orange);
-                    {% else %}background: rgba(59,130,246,0.1); color: var(--blue);{% endif %}
-                ">{{ book.priority|upper }}</span>
-                {% endif %}
             </td>
             <td style="color: var(--muted); max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{{ book.author or "—" }}</td>
             <td style="font-family: monospace; font-size: 0.78rem;">{{ book.isbn }}</td>
@@ -134,10 +127,11 @@
                 {% endif %}
             </td>
             <td class="actions">
+                {% set momox_link = book.momox_url if book.momox_url else "https://www.momox-shop.fr/recherche/" ~ book.isbn %}
                 {% if book.momox_status == 'available' and book.momox_price is not none %}
-                <a href="https://www.momox-shop.fr/recherche/{{ book.isbn }}" target="_blank" class="btn btn-buy btn-sm" style="text-decoration:none;">Acheter</a>
+                <a href="{{ momox_link }}" target="_blank" class="btn btn-buy btn-sm" style="text-decoration:none;">Acheter</a>
                 {% else %}
-                <a href="https://www.momox-shop.fr/recherche/{{ book.isbn }}" target="_blank" class="btn btn-sm" style="text-decoration:none;">Momox</a>
+                <a href="{{ momox_link }}" target="_blank" class="btn btn-sm" style="text-decoration:none;">Momox</a>
                 {% endif %}
                 {% if book.cal_url %}
                 <a href="{{ book.cal_url }}" target="_blank" class="btn btn-sm" style="text-decoration:none;">CaL</a>

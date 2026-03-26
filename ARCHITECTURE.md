@@ -16,12 +16,12 @@ resell-bot/
 │   ├── __init__.py
 │   ├── __main__.py                 # python -m resell_bot entry
 │   ├── main.py                     # CLI entry, config loading, startup
-│   ├── scheduler.py                # APScheduler orchestration, scan loop
-│   ├── priority.py                 # Priority tier management (HOT/WARM/COLD)
+│   ├── scheduler.py                # Continuous parallel scan loop (Semaphore)
+│   ├── priority.py                 # Priority scoring (legacy, not used in continuous mode)
 │   ├── core/
 │   │   ├── models.py               # Listing, ReferencePrice, Alert
 │   │   ├── database.py             # SQLite storage + dedup (no ORM)
-│   │   ├── notifier.py             # Telegram Bot API via httpx
+│   │   ├── notifier.py             # Multi-channel hub: Telegram + Discord + Email
 │   │   └── price_engine.py         # Deal detection (price vs budget)
 │   ├── scrapers/
 │   │   ├── base.py                 # ABC: get_offer(isbn) -> Listing | None
@@ -65,11 +65,11 @@ resell-bot/
 
 ```
 1. CaL CSV export → import_cal_watchlist.py → reference_prices table (1380 ISBNs + max buy prices)
-2. Scheduler runs every 30s, checks tier intervals (HOT 2min, WARM 20min, COLD 4h)
-3. For overdue tier: parallel scan via Semaphore(3) using Medimops JSON API
-4. Each scan: API call → update isbn_availability → check deal → alert
-5. Priority auto-refresh after each cycle
-6. Dashboard: alerts + books with availability + live scan progress
+2. Continuous loop: scan all ISBNs every ~3 min (3 parallel workers, 0.2-0.4s delay)
+3. Each worker: Medimops JSON API call → update isbn_availability → check deal
+4. Deal found: save alert → instant notification (Telegram + Discord + Email)
+5. Daily digest at 08:00 with all available deals
+6. Dashboard: alerts + books with availability + live scan progress (HTMX poll 5s)
 ```
 
 ## Key Design Decisions
@@ -81,11 +81,12 @@ resell-bot/
 - **DEC-005**: Platform rollout by scraping feasibility (easy → hard)
 - **DEC-006**: Buy model (find cheap books to resell), not buyback model
 - **DEC-007**: Medimops JSON API over HTML scraping for Momox (~80ms vs ~2s)
-- **DEC-008**: Priority tiers HOT/WARM/COLD for scan scheduling
+- **DEC-008**: ~~Priority tiers~~ → Continuous parallel scan (all ISBNs every ~3 min)
+- **DEC-011**: Continuous parallel scan over tier-based scheduling
 
 ## Stack
 
 - Python 3.12+, curl_cffi, BeautifulSoup4 + lxml, APScheduler
 - FastAPI + Jinja2 + HTMX (dashboard)
 - SQLite3 (storage), pyyaml (config), python-dotenv (secrets)
-- 92 tests via pytest + pytest-asyncio
+- 94 tests via pytest + pytest-asyncio

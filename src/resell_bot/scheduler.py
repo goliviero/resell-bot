@@ -1,8 +1,9 @@
-"""Scan scheduler — continuous loop scanning all ISBNs sequentially.
+"""Scan scheduler — continuous parallel loop scanning all ISBNs.
 
 Strategy: scan every ISBN at the same frequency in an infinite loop.
-With 1 IP and 1 req/s, full cycle takes ~23 min for 1380 ISBNs.
-Add more IPs (VPS) to divide cycle time proportionally.
+Uses asyncio.Semaphore for parallel workers on the Medimops JSON API
+(~80ms/req, no Cloudflare). 3 workers × 0.3s delay = ~10 req/s peak.
+Full cycle ~3 min for 1380 ISBNs with 1 IP.
 """
 
 import asyncio
@@ -24,7 +25,7 @@ logger = logging.getLogger(__name__)
 
 
 class ScanScheduler:
-    """Scans all reference ISBNs in a continuous loop — no tiers, no gaps."""
+    """Scans all reference ISBNs in a continuous parallel loop."""
 
     def __init__(
         self,
@@ -37,8 +38,9 @@ class ScanScheduler:
         self.notifier = notifier
 
         scan_cfg = settings.get("scan", {})
-        self.delay_min = scan_cfg.get("delay_between_requests", {}).get("min_seconds", 0.8)
-        self.delay_max = scan_cfg.get("delay_between_requests", {}).get("max_seconds", 1.2)
+        self.delay_min = scan_cfg.get("delay_between_requests", {}).get("min_seconds", 0.2)
+        self.delay_max = scan_cfg.get("delay_between_requests", {}).get("max_seconds", 0.4)
+        self.max_workers = scan_cfg.get("max_workers", 3)
 
         http_cfg = settings.get("http", {})
         self.http_client = HttpClient(
@@ -56,6 +58,8 @@ class ScanScheduler:
         self.cooldown_hours = settings.get("dedup", {}).get("cooldown_hours", 24)
         self.scheduler = AsyncIOScheduler()
         self._running = False
+        self._semaphore = asyncio.Semaphore(self.max_workers)
+        self._alert_lock = asyncio.Lock()
 
         # Live scan status for dashboard
         self.scan_status: dict = {
@@ -105,35 +109,75 @@ class ScanScheduler:
         return alert
 
     async def _process_alert(self, alert: Alert) -> None:
-        """Save alert, send notifications immediately."""
-        if self.db.was_recently_alerted(alert.listing.url, self.cooldown_hours):
-            return
+        """Save alert, send notifications immediately. Thread-safe via lock."""
+        async with self._alert_lock:
+            if self.db.was_recently_alerted(alert.listing.url, self.cooldown_hours):
+                return
 
-        # Reload notification settings (user may change via dashboard)
-        if self.notifier:
-            settings = self.db.get_all_notification_settings()
-            self.notifier.configure_from_settings(settings)
+            # Reload notification settings (user may change via dashboard)
+            if self.notifier:
+                settings = self.db.get_all_notification_settings()
+                self.notifier.configure_from_settings(settings)
 
-        self.db.save_alert(alert)
-        if self.notifier:
-            await self.notifier.send_alert(alert)
-        logger.info(
-            "DEAL: %s — %.2f€ on %s (budget %.2f€, savings %.2f€)",
-            alert.listing.title,
-            alert.listing.price,
-            alert.listing.platform,
-            alert.max_buy_price,
-            alert.savings,
-        )
+            self.db.save_alert(alert)
+            if self.notifier:
+                await self.notifier.send_alert(alert)
+            logger.info(
+                "DEAL: %s — %.2f€ on %s (budget %.2f€, savings %.2f€)",
+                alert.listing.title,
+                alert.listing.price,
+                alert.listing.platform,
+                alert.max_buy_price,
+                alert.savings,
+            )
+
+    async def _scan_worker(
+        self,
+        isbn: str,
+        max_price: float,
+        scraper: BaseScraper,
+        counters: dict,
+    ) -> None:
+        """Scan one ISBN within a semaphore-controlled worker."""
+        async with self._semaphore:
+            if not self._running:
+                return
+
+            alert = await self._scan_single(isbn, max_price, scraper)
+
+            if alert:
+                counters["deals"] += 1
+                counters["available"] += 1
+                await self._process_alert(alert)
+            else:
+                row = self.db.conn.execute(
+                    "SELECT status FROM isbn_availability WHERE isbn=? AND platform=?",
+                    (isbn, scraper.platform_name),
+                ).fetchone()
+                if row and row["status"] == "available":
+                    counters["available"] += 1
+
+            counters["scanned"] += 1
+            self.scan_status["scanned_count"] = counters["scanned"]
+            self.scan_status["deals_found"] = counters["deals"]
+            self.scan_status["available_found"] = counters["available"]
+
+            # Rate limit per worker
+            delay = random.uniform(self.delay_min, self.delay_max)
+            await asyncio.sleep(delay)
 
     async def run_continuous(self) -> None:
-        """Main loop: scan all ISBNs one by one, forever.
+        """Main loop: scan all ISBNs with parallel workers, forever.
 
-        Sequential scanning at ~1 req/s = safe for 1 IP.
+        Uses asyncio.Semaphore to limit concurrent requests.
+        3 workers × 0.3s delay on Medimops JSON API = ~10 req/s peak.
         Randomize order each cycle to avoid detectable patterns.
         """
         self._running = True
-        logger.info("Starting continuous scan loop")
+        logger.info(
+            "Starting continuous scan loop (%d parallel workers, %.1f-%.1fs delay)",
+            self.max_workers, self.delay_min, self.delay_max,
+        )
 
         while self._running:
             for scraper in self.scrapers:
@@ -145,7 +189,6 @@ class ScanScheduler:
                     if r.get("max_buy_price") is not None
                 ]
 
-                # Randomize order each cycle
                 random.shuffle(isbn_list)
 
                 total = len(isbn_list)
@@ -160,43 +203,21 @@ class ScanScheduler:
                 })
 
                 logger.info(
-                    "Cycle %d: scanning %d ISBNs on %s",
-                    self.scan_status["cycle_count"] + 1, total, scraper.platform_name,
+                    "Cycle %d: scanning %d ISBNs on %s (%d workers)",
+                    self.scan_status["cycle_count"] + 1, total,
+                    scraper.platform_name, self.max_workers,
                 )
 
-                deals = 0
-                available = 0
+                counters = {"scanned": 0, "deals": 0, "available": 0}
 
-                for i, (isbn, max_price) in enumerate(isbn_list):
-                    if not self._running:
-                        break
-
-                    alert = await self._scan_single(isbn, max_price, scraper)
-
-                    if alert:
-                        deals += 1
-                        available += 1
-                        await self._process_alert(alert)
-                    # Count available (non-deal) books too
-                    elif self.db.conn.execute(
-                        "SELECT status FROM isbn_availability WHERE isbn=? AND platform=?",
-                        (isbn, scraper.platform_name),
-                    ).fetchone() is not None:
-                        row = self.db.conn.execute(
-                            "SELECT status FROM isbn_availability WHERE isbn=? AND platform=?",
-                            (isbn, scraper.platform_name),
-                        ).fetchone()
-                        if row and row["status"] == "available":
-                            available += 1
-
-                    # Update live status
-                    self.scan_status["scanned_count"] = i + 1
-                    self.scan_status["deals_found"] = deals
-                    self.scan_status["available_found"] = available
-
-                    # Rate limit — wait between requests
-                    delay = random.uniform(self.delay_min, self.delay_max)
-                    await asyncio.sleep(delay)
+                # Launch all workers — semaphore limits concurrency
+                tasks = [
+                    asyncio.create_task(
+                        self._scan_worker(isbn, max_price, scraper, counters)
+                    )
+                    for isbn, max_price in isbn_list
+                ]
+                await asyncio.gather(*tasks, return_exceptions=True)
 
                 # Cycle complete
                 cycle_end = datetime.now()
@@ -210,12 +231,12 @@ class ScanScheduler:
                 logger.info(
                     "Cycle %d complete: %d ISBNs in %.0fs (%.1f min), %d available, %d deals",
                     self.scan_status["cycle_count"], total, duration, duration / 60,
-                    available, deals,
+                    counters["available"], counters["deals"],
                 )
 
     async def run_once(self) -> None:
-        """Run a single full scan (for --once mode)."""
-        logger.info("Running single full scan...")
+        """Run a single full scan (for --once mode) with parallel workers."""
+        logger.info("Running single full scan (%d workers)...", self.max_workers)
 
         for scraper in self.scrapers:
             refs = self.db.get_all_reference_isbns()
@@ -227,27 +248,19 @@ class ScanScheduler:
 
             logger.info("Full scan: %d ISBNs on %s", len(isbn_list), scraper.platform_name)
 
-            deals = 0
-            available = 0
-            errors = 0
+            counters = {"scanned": 0, "deals": 0, "available": 0}
 
-            for isbn, max_price in isbn_list:
-                try:
-                    alert = await self._scan_single(isbn, max_price, scraper)
-                    if alert:
-                        deals += 1
-                        available += 1
-                        await self._process_alert(alert)
-                except Exception as e:
-                    errors += 1
-                    logger.debug("Scan error for %s: %s", isbn, e)
-
-                delay = random.uniform(self.delay_min, self.delay_max)
-                await asyncio.sleep(delay)
+            tasks = [
+                asyncio.create_task(
+                    self._scan_worker(isbn, max_price, scraper, counters)
+                )
+                for isbn, max_price in isbn_list
+            ]
+            await asyncio.gather(*tasks, return_exceptions=True)
 
             logger.info(
-                "Full scan complete: %d ISBNs, %d available, %d deals, %d errors",
-                len(isbn_list), available, deals, errors,
+                "Full scan complete: %d ISBNs, %d available, %d deals",
+                len(isbn_list), counters["available"], counters["deals"],
             )
 
     async def send_daily_digest(self) -> None:
@@ -276,12 +289,13 @@ class ScanScheduler:
             name="Daily deals digest",
         )
         self.scheduler.start()
-        estimated_cycle = len(self.db.get_all_reference_isbns()) * ((self.delay_min + self.delay_max) / 2)
+        avg_delay = (self.delay_min + self.delay_max) / 2
+        effective_rps = self.max_workers / avg_delay
+        n_isbns = len(self.db.get_all_reference_isbns())
+        estimated_cycle = n_isbns * avg_delay / self.max_workers
         logger.info(
-            "Scheduler started — continuous scan, ~%.0f req/min, estimated cycle %.0fs (%.1f min), digest at 08:00",
-            60 / ((self.delay_min + self.delay_max) / 2),
-            estimated_cycle,
-            estimated_cycle / 60,
+            "Scheduler started — %d workers, ~%.0f req/s, estimated cycle %.0fs (%.1f min), digest at 08:00",
+            self.max_workers, effective_rps, estimated_cycle, estimated_cycle / 60,
         )
 
     async def shutdown(self) -> None:
