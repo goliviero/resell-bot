@@ -1,0 +1,22 @@
+# Recherches par mots-clés
+keywords:
+  - "manga one piece"
+  - "harry potter coffret"
+  - "Fondation Asimov"
+
+# Recherches par ISBN spécifiques (livres à forte marge connue)
+isbns:
+  - "978-2070584628"  # Le Petit Prince édition spéciale
+
+# Filtres globaux
+filters:
+  max_buy_price: 15.00
+  min_margin: 3.00
+  min_condition: "bon"  # "neuf", "très bon", "bon", "acceptable"
+  platforms_buy:
+    - chasseauxlivres
+    - rakuten
+    - fnac
+  platforms_sell:
+    - momox
+    - recyclivre
