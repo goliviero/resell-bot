@@ -1,25 +1,19 @@
 # Resell Bot
 
-Bot de detection de bonnes affaires sur les sites de vente/rachat de livres.
-
-Scan des plateformes complementaires a vTools : Chasse aux Livres, Momox, Recyclivre, Rakuten, FNAC Marketplace. Detecte les livres sous-cotes (prix d'achat < prix de revente - marge minimum) et envoie une notification Telegram instantanee.
+Bot de sniping de livres sous-cotes. Scanne Momox Shop via l'API Medimops (~80ms/req) pour trouver des livres en vente sous le prix max d'achat de la watchlist CaL (1380 ISBNs). Alerte instantanee via Telegram, Discord, Email + dashboard web. Cycle complet toutes les ~3 minutes.
 
 ## Setup
 
 ```bash
-# Clone
 git clone git@github.com:goliviero/resell-bot.git
 cd resell-bot
 
-# Virtualenv
 python -m venv .venv
 source .venv/Scripts/activate  # Windows Git Bash
 # source .venv/bin/activate    # Linux/Mac
 
-# Install
 pip install -e ".[dev]"
 
-# Configure
 cp .env.example .env
 # Edit .env with your Telegram bot token + chat_id
 # See: python scripts/setup_telegram.py
@@ -28,77 +22,66 @@ cp .env.example .env
 ## Usage
 
 ```bash
-# Single scan (test mode)
-python -m resell_bot --once
-
-# Continuous mode (scans every N minutes, configured in settings.yaml)
-python -m resell_bot
-
-# Also works with:
-python src/resell_bot/main.py --once
+python -m resell_bot               # Continuous mode (~3 min cycle, 3 workers)
+python -m resell_bot --once        # Single scan
+python -m resell_bot --dashboard   # Dashboard only (http://127.0.0.1:8000)
+python -m pytest tests/ -v         # 94 tests
 ```
 
-## Telegram Setup
+## Notifications
 
-1. Create a bot via [@BotFather](https://t.me/BotFather) on Telegram
-2. Send a message to your new bot
-3. Run `python scripts/setup_telegram.py` and paste your token
-4. Copy the output to your `.env` file
+- **Telegram** — configured via `.env` (TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID)
+- **Discord** — webhook URL via dashboard settings page
+- **Email** — SMTP config via dashboard settings page
+- **Daily digest** at 08:00 with all available deals
+
+Setup Telegram: `python scripts/setup_telegram.py`
 
 ## Configuration
 
-- `config/settings.yaml` — scan frequency, HTTP settings, delays, dedup cooldown
-- `config/watchlists/livres.yaml` — keywords, ISBNs, price filters, platform selection
-
-## Tests
-
-```bash
-python -m pytest tests/ -v
-```
+- `config/settings.yaml` — scan workers, delays, HTTP, database path, dedup cooldown
+- `.env` — TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID
 
 ## Architecture
 
 ```
-resell-bot/
-├── config/
-│   ├── settings.yaml           # Global config
-│   └── watchlists/livres.yaml  # Search terms + filters
-├── src/resell_bot/
-│   ├── main.py                 # Entry point
-│   ├── scheduler.py            # APScheduler orchestration
-│   ├── core/
-│   │   ├── models.py           # Listing, PriceCheck, Alert
-│   │   ├── database.py         # SQLite storage + dedup
-│   │   ├── notifier.py         # Telegram Bot API
-│   │   └── price_engine.py     # Margin calculation
-│   ├── scrapers/
-│   │   ├── base.py             # ABC interface
-│   │   ├── chasseauxlivres.py  # Phase 1 (implemented)
-│   │   ├── momox.py            # Phase 2 (stub)
-│   │   ├── recyclivre.py       # Phase 3 (stub)
-│   │   ├── rakuten.py          # Phase 4 (stub)
-│   │   └── fnac.py             # Phase 5 (stub)
-│   └── utils/
-│       ├── http_client.py      # Async httpx + retry + rate limit
-│       └── isbn.py             # ISBN-10/13 validation
-├── tests/
-├── scripts/setup_telegram.py
-└── pyproject.toml
+src/resell_bot/
+├── main.py                     # CLI entry, config loading, startup
+├── scheduler.py                # Continuous parallel scan loop (Semaphore)
+├── core/
+│   ├── models.py               # Listing, Alert, ReferencePrice dataclasses
+│   ├── database.py             # SQLite storage + dedup (no ORM)
+│   ├── notifier.py             # Multi-channel hub: Telegram + Discord + Email
+│   ├── price_engine.py         # Deal detection (price vs budget)
+│   ├── buyer.py                # Auto-buy orchestration (Playwright, WIP)
+│   ├── discord_notifier.py     # Discord webhook sender
+│   └── email_notifier.py       # SMTP email sender
+├── scrapers/
+│   ├── base.py                 # ABC: get_offer(isbn) -> Listing | None
+│   ├── momox_api.py            # PRIMARY — Medimops JSON API (~80ms/req)
+│   ├── momox.py                # HTML fallback (archive)
+│   └── {recyclivre,rakuten,fnac,ebay,amazon}.py  # Stubs
+├── utils/
+│   ├── http_client.py          # curl_cffi async: retry, backoff, UA rotation
+│   └── isbn.py                 # ISBN-10/13 validation + conversion
+└── web/
+    ├── app.py                  # FastAPI + HTMX dashboard
+    └── templates/              # Jinja2 (dark mode)
 ```
 
-## Phases
+## Scrapers
 
-| Phase | Scraper | Status |
-|-------|---------|--------|
-| 1 | Chasse aux Livres (discovery) | Done |
-| 2 | Momox (buyback pricing) | Stub |
-| 3 | Recyclivre (buyback pricing) | Stub |
-| 4 | Rakuten (marketplace) | Stub |
-| 5 | FNAC Marketplace | Stub |
-| 6 | Arbitrage mode + price history + daily digest | Planned |
+| Platform | Status | Approach |
+|----------|--------|----------|
+| **Momox Shop** | Done | Medimops JSON API (api.medimops.de) |
+| Recyclivre | Stub | HTML parsing (easy) |
+| Rakuten | Stub | HTML + headers (medium) |
+| eBay | Stub | Browse API (medium) |
+| FNAC | Stub | curl_cffi + DataDome (hard) |
+| Amazon | Stub | PA-API (very hard) |
 
 ## Stack
 
-- Python 3.12+, httpx (async), BeautifulSoup4 + lxml, APScheduler, SQLite3
-- Zero wrapper libs: Telegram via raw Bot API, no ORM
-- stdlib only for core logic (dataclasses, sqlite3, pathlib)
+- Python 3.12+, curl_cffi (Cloudflare bypass), BeautifulSoup4 + lxml, APScheduler
+- FastAPI + Jinja2 + HTMX (dashboard), SQLite3 (storage)
+- 94 tests via pytest + pytest-asyncio

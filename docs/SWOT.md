@@ -1,62 +1,65 @@
 # SWOT — resell-bot
 
-> Mis à jour: 2026-03-26
+> Updated: 2026-03-26 (post-audit + remediation)
 
 ## Strengths
-- S1: Clean async architecture (curl_cffi + asyncio), Cloudflare bypass intégré
-- S2: Momox Shop scraper fonctionnel (HTML parsing, ISBN→MPID conversion)
-- S3: BDD CaL solide: 1380 ISBNs avec prix max d'achat
-- S4: SQLite dedup empêche les alertes en double (cooldown 24h)
+- S1: Clean async architecture (curl_cffi + asyncio), Cloudflare bypass
+- S2: Momox API scraper: ~80ms/req, JSON, no Cloudflare — primary scanner
+- S3: BDD CaL: 1380 ISBNs avec prix max d'achat (competitive intelligence)
+- S4: SQLite dedup (24h cooldown) + isbn_availability tracking
 - S5: ISBN validation + normalisation (ISBN-10/13 conversion, text extraction)
-- S6: Dashboard web (FastAPI + HTMX) avec workflow new→seen→bought/ignored
-- S7: Architecture extensible: BaseScraper ABC, un fichier par plateforme
+- S6: Dashboard web (FastAPI + HTMX) — alerts, books, settings, live scan
+- S7: Architecture extensible: BaseScraper ABC, one file per platform
 - S8: Multi-channel notifications: Telegram + Discord webhook + Email SMTP
-- S9: Medimops JSON API (~80ms vs ~2s HTML) — game changer
-- S10: Continuous parallel scan: ALL 1380 ISBNs every ~3 min (3 workers, ~10 req/s)
-- S11: 94 tests passing
-- S12: Live scan dashboard with progress tracking + daily digest at 08:00
+- S9: Continuous parallel scan: ALL 1380 ISBNs every ~3 min (3 workers, ~10 req/s)
+- S10: 124 tests passing, 48% test-to-code ratio
+- S11: Daily digest at 08:00 + instant alerts on deal detection
+- S12: Git hooks enforce conventional commits + activity logging
+- S13: Auto-buy prototype (buyer.py, Playwright flow)
+- S14: 2,582 lines of production code — lean, focused codebase
 
 ## Weaknesses
-- W1: Seul Momox Shop est implémenté (5 autres plateformes en stubs)
-- W2: Pas de test E2E du scan complet (--once)
-- W3: Rate limiting testé avec succès sur 1380 ISBNs, pas de ban
-- W4: Pas d'auto-buy (clic manuel nécessaire)
-- W5: No price history tracking yet
-- W6: Single IP (no proxy rotation)
+- W1: Only Momox implemented (5 platform stubs consolidated in _stubs.py)
+- W2: ~~No tests for scheduler/notifier~~ → **FIXED**: 30 new tests (12 scheduler + 18 notifier)
+- W3: ~~No lockfile~~ → **FIXED**: requirements.txt with 47 pinned deps
+- W4: database.py at 561 lines — largest file, acceptable for single-module SQLite wrapper
+- W5: priority.py is dead code (11 tests for unused module, DEC-008 superseded)
+- W6: Single IP, no proxy rotation
+- W7: ~~No CI/CD~~ → **FIXED**: GitHub Actions CI (.github/workflows/ci.yml)
+- W8: No E2E test of full scan cycle (--once mode)
 
 ## Opportunities
-- O1: Recyclivre = scraping facile, pas de Cloudflare sévère
-- O2: Rakuten = pages structurées, Cloudflare bypass via curl_cffi
-- O3: eBay Browse API = accès programmatique officiel (avec clé dev)
-- O4: Auto-buy via Playwright pour sniping rapide
-- O5: Étendre au-delà des livres (vinyles, jeux vidéo, BD)
-- O6: Alertes push mobile via Telegram → réaction rapide
-- O7: Medimops API may expose other useful endpoints
-- O8: Increase workers to 5 + reduce delays → cycle ~1-2 min
-- O9: VPS scaling (3 OVH VPS → cycle ~1 min for ~11€/month)
+- O1: Recyclivre scraper — easy, no Cloudflare, HTML parsing
+- O2: Rakuten scraper — medium, structured pages
+- O3: eBay Browse API — official free API with dev key
+- O4: Auto-buy completion (buyer.py WIP → production)
+- O5: Increase workers to 5 + reduce delays → cycle ~1-2 min
+- O6: VPS scaling (3 OVH VPS ~11€/m → cycle ~1 min)
+- O7: Price history tracking + trend charts
+- O8: Constructor.io API exploration (alternative Momox endpoint)
+- O9: ~~GitHub Actions CI~~ → **Done**
 
 ## Threats
-- T1: Cloudflare/anti-bot évoluent → scrapers cassés
-- T2: Ban IP si trop de requêtes (1380 ISBNs × N plateformes)
-- T3: Structure HTML des sites change sans prévenir
-- T4: 3D Secure bloque l'auto-buy
-- T5: Concurrence d'autres bots/snipers sur les mêmes deals
-- T6: Medimops API could be locked down/changed
+- T1: Medimops API lockdown/rate limiting — single point of failure
+- T2: Ban IP at higher volumes (multi-platform scaling)
+- T3: Cloudflare/anti-bot evolution on new platforms
+- T4: 3D Secure blocking auto-buy automation
+- T5: Competition from other snipers on same deals (speed race)
+- T6: CaL dispatching deals to other users before us
 
-## Scraping Feasibility par plateforme
+## Scraping Feasibility
 
-| Plateforme | Cloudflare | Anti-bot | Approche | Risque ban | Faisabilité |
-|------------|-----------|----------|----------|-----------|-------------|
-| **Momox Shop** | Non (API) | Faible | Fait — API JSON (api.medimops.de) | Faible | **Fait** |
-| **Recyclivre** | Non/léger | Faible | HTML parsing | Faible | **Facile** |
-| **Rakuten** | Léger | Moyen | HTML parsing + headers FR | Moyen si > 100 req/min | **Moyen** |
-| **FNAC** | Strict | Agressif | curl_cffi + parsing | Élevé | **Difficile** |
-| **eBay** | Non (API) | API rate limit | Browse API officielle | Faible avec clé | **Moyen** |
-| **Amazon** | Très strict | Très agressif | Quasi impossible sans proxy | Très élevé | **Très difficile** |
+| Platform | Cloudflare | Anti-bot | Approach | Ban Risk | Status |
+|----------|-----------|----------|----------|----------|--------|
+| **Momox Shop** | Non (API) | Faible | API JSON (api.medimops.de) | Faible | **Done** |
+| **Recyclivre** | Non/léger | Faible | HTML parsing | Faible | **Easy** |
+| **Rakuten** | Léger | Moyen | HTML + headers FR | Moyen | **Medium** |
+| **eBay** | Non (API) | Rate limit | Browse API officielle | Faible | **Medium** |
+| **FNAC** | Strict | Agressif | curl_cffi + DataDome | Élevé | **Hard** |
+| **Amazon** | Très strict | Très agressif | PA-API (affiliate) | Très élevé | **Very Hard** |
 
-### Recommandation anti-ban
-- API JSON (Medimops): 0.2-0.4s entre requêtes, 3 workers → ~10 req/s — safe
-- HTML scraping (autres plateformes): 1-2s entre requêtes, 1 worker — conservateur
-- UA rotation: 10 User-Agents différents
-- Randomiser l'ordre des ISBNs à chaque cycle pour éviter les patterns détectables
-- Proxy rotation si ban IP (futur P2)
+### Anti-ban strategy
+- API JSON (Medimops): 0.2-0.4s delay, 3 workers → ~10 req/s — safe
+- HTML scraping (future): 1-2s delay, 1 worker — conservative
+- UA rotation: 10 User-Agents, randomized order each cycle
+- Proxy rotation if IP banned (future P2)

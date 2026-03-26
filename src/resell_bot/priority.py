@@ -1,6 +1,9 @@
-"""Priority scoring for ISBN scan scheduling.
+"""ARCHIVED: Legacy priority tier system (superseded by DEC-011 continuous scan).
 
-Strategy: books with high VALUE (max_buy_price) are scanned most frequently,
+Kept for reference. The continuous parallel scan (scheduler.py) scans ALL ISBNs
+every ~3 min, making priority tiers unnecessary. See docs/decisions.md DEC-011.
+
+Original strategy: books with high VALUE (max_buy_price) are scanned most frequently,
 regardless of whether they've been seen in stock before. A rare book worth 100€
 that has never appeared is MORE important to scan often than a 5€ book seen
 10 times. The goal is to never miss a high-value restock.

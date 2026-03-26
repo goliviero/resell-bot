@@ -19,6 +19,7 @@ Bot Python de sniping de livres sous-cotés. Scanne les plateformes d'achat (Mom
 - `core/database.py` — SQLite wrapper (no ORM)
 - `core/notifier.py` — Multi-channel hub: Telegram + Discord + Email
 - `core/price_engine.py` — Deal detection: listing price vs max buy price
+- `core/buyer.py` — Auto-buy orchestration (Playwright, multi-step checkout, WIP)
 - `scrapers/base.py` — ABC: `get_offer(isbn) -> Listing | None`
 - `scrapers/momox_api.py` — Momox Shop via Medimops JSON API — PRIMARY
 - `scrapers/momox.py` — Momox Shop HTML fallback — ARCHIVE
@@ -34,7 +35,7 @@ Bot Python de sniping de livres sous-cotés. Scanne les plateformes d'achat (Mom
 - Buy model: find books cheap on platforms → resell on Vinted/Leboncoin
 - Alert when `platform_price ≤ max_buy_price` from watchlist
 - curl_cffi for TLS fingerprint impersonation (bypasses Cloudflare)
-- Momox Shop: product pages at `momox-shop.fr/M0{isbn10}.html`
+- Momox Shop: product pages at `momox-shop.fr/{mpid}.html` (mpid from API)
 
 ## Config
 

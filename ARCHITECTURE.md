@@ -22,7 +22,10 @@ resell-bot/
 │   │   ├── models.py               # Listing, ReferencePrice, Alert
 │   │   ├── database.py             # SQLite storage + dedup (no ORM)
 │   │   ├── notifier.py             # Multi-channel hub: Telegram + Discord + Email
-│   │   └── price_engine.py         # Deal detection (price vs budget)
+│   │   ├── price_engine.py         # Deal detection (price vs budget)
+│   │   ├── buyer.py                # Auto-buy orchestration (Playwright, WIP)
+│   │   ├── discord_notifier.py     # Discord webhook sender
+│   │   └── email_notifier.py       # SMTP email sender
 │   ├── scrapers/
 │   │   ├── base.py                 # ABC: get_offer(isbn) -> Listing | None
 │   │   ├── momox.py                # Momox Shop — HTML fallback

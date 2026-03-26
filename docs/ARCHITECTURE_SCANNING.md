@@ -181,8 +181,10 @@ CREATE TABLE isbn_availability (
 Methodes cles :
 
 - `upsert_availability()` : met a jour le statut et incremente `times_available` si le livre passe de indisponible a disponible. Retourne `True` si le statut a change.
-- `get_isbns_by_priority(platform, tier)` : recupere les ISBN d'un tier donne, joints avec `reference_prices` pour avoir le `max_buy_price`.
-- `get_unchecked_isbns(platform)` : ISBN de la watchlist jamais scannes (inclus dans le tier COLD).
+- `get_all_reference_isbns()` : recupere tous les ISBN de la watchlist avec leur `max_buy_price`.
+- `get_books_with_prices()` : jointure complete reference_prices + isbn_availability + listings pour l'affichage dashboard.
+
+> Note : la colonne `priority` dans `isbn_availability` est un vestige du systeme de tiers (DEC-008, supersede par DEC-011). Le scan continu ignore cette colonne.
 
 ### Format d'URL Momox Shop
 
@@ -306,9 +308,9 @@ Avec 5 workers et 0.15s de delai moyen, on atteindrait ~33 req/s. Cycle ~40 seco
 
 Actuellement le dashboard poll `/scan-status` toutes les 5 secondes. Avec un WebSocket, l'alerte apparaitrait **instantanement** dans le dashboard des qu'elle est detectee, sans aucun delai de polling.
 
-### 4. Notification Telegram instantanee
+### 4. Notifications multi-canal
 
-Deja implementee. La latence principale vient de l'intervalle de scan (2 min pour HOT), pas de l'envoi Telegram qui est quasi-instantane.
+Deja implementees : Telegram, Discord (webhook), Email (SMTP). Les alertes sont envoyees instantanement a la detection. La latence principale vient du cycle de scan (~3 min), pas de l'envoi.
 
 ### 5. Rotation de fingerprints
 
