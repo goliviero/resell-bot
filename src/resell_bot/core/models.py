@@ -1,12 +1,22 @@
-"""Data models for Book Sniper."""
+"""Data models for resell-bot."""
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime
+from enum import Enum
+
+
+class AlertStatus(str, Enum):
+    """Lifecycle of an alert in the dashboard."""
+
+    NEW = "new"
+    SEEN = "seen"
+    BOUGHT = "bought"
+    IGNORED = "ignored"
 
 
 @dataclass
 class Listing:
-    """A book listing found on a platform."""
+    """A book listing found on a sale platform."""
 
     title: str
     price: float
@@ -23,22 +33,29 @@ class Listing:
 
 
 @dataclass
-class PriceCheck:
-    """Cross-platform price comparison for a given ISBN."""
+class ReferencePrice:
+    """A book in the watchlist — imported from CaL CSV.
+
+    max_buy_price is the maximum price we're willing to pay.
+    The bot scans platforms for listings below this price.
+    """
 
     isbn: str
-    buyback_prices: dict[str, float] = field(default_factory=dict)
-    market_prices: dict[str, float] = field(default_factory=dict)
-    best_margin: float = 0.0
-    best_buy_platform: str = ""
-    best_sell_platform: str = ""
+    max_buy_price: float | None = None
+    source: str = ""  # "cal_import", "manual"
+    updated_at: datetime | None = None
+    title: str | None = None
+    author: str | None = None
+    url: str | None = None
 
 
 @dataclass
 class Alert:
-    """A profitable deal worth notifying about."""
+    """A deal found: a book from the watchlist is available below max buy price."""
 
     listing: Listing
-    estimated_margin: float
-    buyback_price: float
-    buyback_platform: str
+    max_buy_price: float  # from watchlist — the max we'd pay
+    savings: float  # max_buy_price - listing.price
+    id: int | None = None
+    status: AlertStatus = AlertStatus.NEW
+    notified_at: datetime | None = None

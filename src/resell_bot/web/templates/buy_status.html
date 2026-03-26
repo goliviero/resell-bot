@@ -1,0 +1,120 @@
+{% extends "base.html" %}
+{% block title %}Achat — {{ alert.title }}{% endblock %}
+{% block content %}
+
+<a href="/alert/{{ alert.id }}" class="btn" style="margin-bottom: 1rem;">&larr; Retour a l'alerte</a>
+
+<div class="detail-card" style="max-width: 600px;">
+    <h2 style="margin-bottom: 0.5rem;">Achat en cours</h2>
+    <p style="color: var(--muted); margin-bottom: 1.5rem;">{{ alert.title }} — {{ "%.2f"|format(alert.buy_price) }}&euro; sur Momox</p>
+
+    <!-- Progress steps -->
+    <div id="buy-progress" hx-get="/buy/{{ alert.id }}/poll" hx-trigger="every 2s" hx-swap="none"
+         hx-on::after-request="updateBuyStatus(event)">
+
+        {% set steps = [
+            ("opening", "Ouverture de la page"),
+            ("adding_to_cart", "Ajout au panier"),
+            ("cart_confirmed", "Article dans le panier"),
+            ("checkout", "Passage en caisse"),
+            ("payment", "Page de paiement"),
+            ("waiting_3ds", "Validation 3D Secure"),
+            ("completed", "Achat termine")
+        ] %}
+
+        {% for step_key, step_label in steps %}
+        <div class="buy-step" id="step-{{ step_key }}" style="display: flex; align-items: center; gap: 0.75rem; padding: 0.6rem 0; border-bottom: 1px solid var(--border);">
+            <div class="step-icon" style="width: 28px; height: 28px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 0.8rem; flex-shrink: 0;
+                {% if job.step == step_key %}
+                    background: var(--accent); color: white;">&#9679;
+                {% elif job.steps_done|length > loop.index0 %}
+                    background: var(--green); color: white;">&#10003;
+                {% else %}
+                    background: var(--border); color: var(--muted);">{{ loop.index }}
+                {% endif %}
+            </div>
+            <span style="{% if job.step == step_key %}color: var(--text); font-weight: 600;{% else %}color: var(--muted);{% endif %}">
+                {{ step_label }}
+            </span>
+            {% if job.step == step_key and step_key not in ('completed', 'failed') %}
+            <span class="htmx-indicator" style="color: var(--accent); font-size: 0.8rem; margin-left: auto;">...</span>
+            {% endif %}
+        </div>
+        {% endfor %}
+    </div>
+
+    <!-- Current status message -->
+    <div id="status-message" style="margin-top: 1.5rem; padding: 1rem; border-radius: 8px;
+        {% if job.step == 'completed' %}
+            background: rgba(34,197,94,0.1); border: 1px solid var(--green);">
+            <span style="color: var(--green); font-weight: 700;">Achat termine avec succes !</span>
+        {% elif job.step == 'failed' %}
+            background: rgba(239,68,68,0.1); border: 1px solid var(--red);">
+            <span style="color: var(--red); font-weight: 700;">Echec: {{ job.error }}</span>
+        {% elif job.step == 'waiting_3ds' %}
+            background: rgba(245,158,11,0.1); border: 1px solid var(--orange);">
+            <span style="color: var(--orange); font-weight: 700;">Complete le paiement 3D Secure dans le navigateur ouvert</span>
+        {% else %}
+            background: rgba(108,99,255,0.1); border: 1px solid var(--accent);">
+            <span style="color: var(--accent);">{{ job.step_label }}</span>
+        {% endif %}
+    </div>
+
+    <!-- Log -->
+    {% if job.steps_done %}
+    <div style="margin-top: 1rem;">
+        <p style="color: var(--muted); font-size: 0.75rem; margin-bottom: 0.5rem;">LOG</p>
+        <div style="background: var(--bg); border-radius: 6px; padding: 0.75rem; font-family: monospace; font-size: 0.8rem; max-height: 200px; overflow-y: auto;" id="buy-log">
+            {% for entry in job.steps_done %}
+            <div style="color: var(--green);">&#10095; {{ entry }}</div>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+</div>
+
+<script>
+function updateBuyStatus(event) {
+    if (!event.detail.successful) return;
+    const data = JSON.parse(event.detail.xhr.responseText);
+
+    // Update log
+    const logEl = document.getElementById('buy-log');
+    if (logEl && data.steps_done) {
+        logEl.innerHTML = data.steps_done.map(e =>
+            `<div style="color: var(--green);">&#10095; ${e}</div>`
+        ).join('');
+        logEl.scrollTop = logEl.scrollHeight;
+    }
+
+    // Update status message
+    const msgEl = document.getElementById('status-message');
+    if (msgEl) {
+        if (data.step === 'completed') {
+            msgEl.style.background = 'rgba(34,197,94,0.1)';
+            msgEl.style.borderColor = 'var(--green)';
+            msgEl.innerHTML = '<span style="color: var(--green); font-weight: 700;">Achat termine avec succes !</span>';
+        } else if (data.step === 'failed') {
+            msgEl.style.background = 'rgba(239,68,68,0.1)';
+            msgEl.style.borderColor = 'var(--red)';
+            msgEl.innerHTML = `<span style="color: var(--red); font-weight: 700;">Echec: ${data.error}</span>`;
+        } else if (data.step === 'waiting_3ds') {
+            msgEl.style.background = 'rgba(245,158,11,0.1)';
+            msgEl.style.borderColor = 'var(--orange)';
+            msgEl.innerHTML = '<span style="color: var(--orange); font-weight: 700;">Complete le paiement 3D Secure dans le navigateur ouvert</span>';
+        } else {
+            msgEl.style.background = 'rgba(108,99,255,0.1)';
+            msgEl.style.borderColor = 'var(--accent)';
+            msgEl.innerHTML = `<span style="color: var(--accent);">${data.step_label}</span>`;
+        }
+    }
+
+    // Stop polling when done
+    if (data.step === 'completed' || data.step === 'failed') {
+        document.getElementById('buy-progress').removeAttribute('hx-get');
+        htmx.process(document.getElementById('buy-progress'));
+    }
+}
+</script>
+
+{% endblock %}

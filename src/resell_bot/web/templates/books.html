@@ -1,0 +1,176 @@
+{% extends "base.html" %}
+{% block title %}Livres{% endblock %}
+{% block content %}
+
+<!-- Summary bar -->
+<div class="stats" style="margin-bottom: 1rem;">
+    <div class="stat-card">
+        <div class="number">{{ scan.total_watchlist }}</div>
+        <div class="label">Watchlist</div>
+    </div>
+    <div class="stat-card stat-new">
+        <div class="number">{{ scan.available }}</div>
+        <div class="label">Dispos Momox</div>
+    </div>
+    <div class="stat-card">
+        <div class="number" style="color: var(--red);">{{ scan.unavailable }}</div>
+        <div class="label">Indispos</div>
+    </div>
+    <div class="stat-card">
+        <div class="number" style="color: var(--muted);">{{ scan.unchecked }}</div>
+        <div class="label">Non scannes</div>
+    </div>
+</div>
+
+<!-- Search + filters -->
+<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; flex-wrap: wrap; gap: 0.5rem;">
+    <div style="color: var(--muted); font-size: 0.85rem;">{{ total }} livres affiches</div>
+    <form method="get" action="/books" style="display: flex; gap: 0.5rem;">
+        <input type="hidden" name="sort" value="{{ sort }}">
+        <input type="hidden" name="dispo" value="{{ dispo }}">
+        <input type="text" name="q" value="{{ search }}" placeholder="Rechercher (titre, auteur, ISBN)..."
+               style="padding: 0.4rem 0.75rem; border-radius: 6px; border: 1px solid var(--border);
+                      background: var(--surface); color: var(--text); font-size: 0.85rem; width: 280px;">
+        <button type="submit" class="btn">Chercher</button>
+        {% if search %}
+        <a href="/books?sort={{ sort }}&dispo={{ dispo }}" class="btn">Effacer</a>
+        {% endif %}
+    </form>
+</div>
+
+<!-- Availability filter -->
+<div class="filters" style="margin-bottom: 0.5rem;">
+    <a href="/books?q={{ search }}&sort={{ sort }}" class="filter-btn {% if not dispo %}active{% endif %}">Tous</a>
+    <a href="/books?q={{ search }}&sort={{ sort }}&dispo=available" class="filter-btn {% if dispo == 'available' %}active{% endif %}" style="{% if dispo == 'available' %}background: var(--green); border-color: var(--green);{% endif %}">Disponibles</a>
+    <a href="/books?q={{ search }}&sort={{ sort }}&dispo=unavailable" class="filter-btn {% if dispo == 'unavailable' %}active{% endif %}" style="{% if dispo == 'unavailable' %}background: var(--red); border-color: var(--red);{% endif %}">Indisponibles</a>
+</div>
+
+<!-- Sort tabs -->
+<div class="filters" style="margin-bottom: 1rem;">
+    <a href="/books?q={{ search }}&sort=deals&dispo={{ dispo }}" class="filter-btn {% if sort == 'deals' %}active{% endif %}">Bonnes affaires</a>
+    <a href="/books?q={{ search }}&sort=available&dispo={{ dispo }}" class="filter-btn {% if sort == 'available' %}active{% endif %}">Dispo d'abord</a>
+    <a href="/books?q={{ search }}&sort=title&dispo={{ dispo }}" class="filter-btn {% if sort == 'title' %}active{% endif %}">A-Z</a>
+    <a href="/books?q={{ search }}&sort=price_asc&dispo={{ dispo }}" class="filter-btn {% if sort == 'price_asc' %}active{% endif %}">Prix &#8593;</a>
+    <a href="/books?q={{ search }}&sort=price_desc&dispo={{ dispo }}" class="filter-btn {% if sort == 'price_desc' %}active{% endif %}">Prix &#8595;</a>
+    <a href="/books?q={{ search }}&sort=margin&dispo={{ dispo }}" class="filter-btn {% if sort == 'margin' %}active{% endif %}">Marge</a>
+</div>
+
+<!-- Book list -->
+{% if books %}
+<table class="alert-table">
+    <thead>
+        <tr>
+            <th style="width: 40px;">Dispo</th>
+            <th>Titre</th>
+            <th>Auteur</th>
+            <th style="font-family: monospace;">ISBN</th>
+            <th>Prix Momox</th>
+            <th>Budget</th>
+            <th>Marge</th>
+            <th>Etat</th>
+            <th>Dernier scan</th>
+            <th>Liens</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for book in books %}
+        <tr{% if book.momox_price is not none and book.max_buy_price is not none and book.momox_price <= book.max_buy_price %} style="background: rgba(34,197,94,0.08);"{% endif %}>
+            <!-- Availability indicator -->
+            <td style="text-align: center; font-size: 1.1rem;">
+                {% if book.momox_status == 'available' %}
+                <span title="Disponible sur Momox" style="color: var(--green);">&#10003;</span>
+                {% elif book.momox_status == 'unavailable' %}
+                <span title="Indisponible" style="color: var(--red);">&#10007;</span>
+                {% else %}
+                <span title="Pas encore scanne" style="color: var(--muted);">&#8212;</span>
+                {% endif %}
+            </td>
+            <td>
+                <strong>{{ book.title[:60] }}{% if book.title and book.title|length > 60 %}...{% endif %}</strong>
+                {% if book.priority %}
+                <span class="badge" style="margin-left: 0.3rem; font-size: 0.6rem; padding: 0.1rem 0.3rem;
+                    {% if book.priority == 'hot' %}background: rgba(239,68,68,0.15); color: var(--red);
+                    {% elif book.priority == 'warm' %}background: rgba(245,158,11,0.15); color: var(--orange);
+                    {% else %}background: rgba(59,130,246,0.1); color: var(--blue);{% endif %}
+                ">{{ book.priority|upper }}</span>
+                {% endif %}
+            </td>
+            <td style="color: var(--muted); max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{{ book.author or "—" }}</td>
+            <td style="font-family: monospace; font-size: 0.78rem;">{{ book.isbn }}</td>
+            <td>
+                {% if book.momox_price is not none %}
+                    <strong>{{ "%.2f"|format(book.momox_price) }}&euro;</strong>
+                {% else %}
+                    <span style="color: var(--muted);">—</span>
+                {% endif %}
+            </td>
+            <td>
+                {% if book.max_buy_price is not none %}
+                    {{ "%.2f"|format(book.max_buy_price) }}&euro;
+                {% else %}
+                    <span style="color: var(--muted);">—</span>
+                {% endif %}
+            </td>
+            <td>
+                {% if book.momox_price is not none and book.max_buy_price is not none %}
+                    {% set margin = book.max_buy_price - book.momox_price %}
+                    {% if margin > 0 %}
+                        <span class="margin-positive">+{{ "%.2f"|format(margin) }}&euro;</span>
+                    {% elif margin == 0 %}
+                        <span style="color: var(--orange);">0.00&euro;</span>
+                    {% else %}
+                        <span class="margin-negative">{{ "%.2f"|format(margin) }}&euro;</span>
+                    {% endif %}
+                {% else %}
+                    <span style="color: var(--muted);">—</span>
+                {% endif %}
+            </td>
+            <td style="font-size: 0.8rem; color: var(--muted);">{{ book.condition or "—" }}</td>
+            <td style="font-size: 0.75rem; color: var(--muted);">
+                {% if book.last_checked_at %}
+                {{ book.last_checked_at[:16] }}
+                {% else %}
+                —
+                {% endif %}
+            </td>
+            <td class="actions">
+                {% if book.momox_status == 'available' and book.momox_price is not none %}
+                <a href="https://www.momox-shop.fr/recherche/{{ book.isbn }}" target="_blank" class="btn btn-buy btn-sm" style="text-decoration:none;">Acheter</a>
+                {% else %}
+                <a href="https://www.momox-shop.fr/recherche/{{ book.isbn }}" target="_blank" class="btn btn-sm" style="text-decoration:none;">Momox</a>
+                {% endif %}
+                {% if book.cal_url %}
+                <a href="{{ book.cal_url }}" target="_blank" class="btn btn-sm" style="text-decoration:none;">CaL</a>
+                {% endif %}
+            </td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+
+<!-- Pagination -->
+<div class="pagination">
+    {% if page > 1 %}
+    <a href="/books?page={{ page - 1 }}&q={{ search }}&sort={{ sort }}&dispo={{ dispo }}" class="btn btn-sm">&laquo; Precedent</a>
+    {% endif %}
+    <span style="color: var(--muted); font-size: 0.8rem; padding: 0.2rem 0.5rem;">
+        Page {{ page }} / {{ ((total - 1) // per_page + 1) if total > 0 else 1 }}
+    </span>
+    {% if books|length == per_page %}
+    <a href="/books?page={{ page + 1 }}&q={{ search }}&sort={{ sort }}&dispo={{ dispo }}" class="btn btn-sm">Suivant &raquo;</a>
+    {% endif %}
+</div>
+{% else %}
+<div class="empty-state">
+    {% if search %}
+    <p>Aucun livre trouve pour "{{ search }}".</p>
+    {% elif dispo %}
+    <p>Aucun livre {{ 'disponible' if dispo == 'available' else 'indisponible' }}.</p>
+    {% else %}
+    <p>Aucun livre dans la watchlist.</p>
+    <p style="margin-top: 0.5rem; font-size: 0.85rem;">Importe un CSV CaL avec <code>python scripts/import_cal_watchlist.py</code></p>
+    {% endif %}
+</div>
+{% endif %}
+
+{% endblock %}

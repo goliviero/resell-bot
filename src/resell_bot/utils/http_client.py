@@ -1,10 +1,10 @@
-"""Shared async HTTP client with retry, rate limiting, and header rotation."""
+"""Shared async HTTP client with retry, rate limiting, and Cloudflare bypass."""
 
 import asyncio
 import logging
 import random
 
-import httpx
+from curl_cffi.requests import AsyncSession, Response
 
 logger = logging.getLogger(__name__)
 
@@ -23,9 +23,16 @@ DEFAULT_HEADERS = {
     "Upgrade-Insecure-Requests": "1",
 }
 
+# Browser to impersonate for TLS fingerprint (bypasses Cloudflare)
+IMPERSONATE_BROWSER = "chrome"
+
 
 class HttpClient:
-    """Async HTTP client with automatic retry and rate limiting."""
+    """Async HTTP client with automatic retry, rate limiting, and Cloudflare bypass.
+
+    Uses curl_cffi to impersonate a real browser TLS fingerprint,
+    which is required for sites behind Cloudflare (e.g. Momox).
+    """
 
     def __init__(
         self,
@@ -40,16 +47,16 @@ class HttpClient:
         self.max_retries = max_retries
         self.delay_min = delay_min
         self.delay_max = delay_max
-        self._client: httpx.AsyncClient | None = None
+        self._session: AsyncSession | None = None
 
-    async def _get_client(self) -> httpx.AsyncClient:
-        if self._client is None or self._client.is_closed:
-            self._client = httpx.AsyncClient(
+    async def _get_session(self) -> AsyncSession:
+        if self._session is None:
+            self._session = AsyncSession(
                 timeout=self.timeout,
-                follow_redirects=True,
-                http2=True,
+                impersonate=IMPERSONATE_BROWSER,
+                allow_redirects=True,
             )
-        return self._client
+        return self._session
 
     def _random_headers(self) -> dict[str, str]:
         headers = dict(DEFAULT_HEADERS)
@@ -65,9 +72,9 @@ class HttpClient:
         url: str,
         params: dict | None = None,
         extra_headers: dict | None = None,
-    ) -> httpx.Response:
+    ) -> Response:
         """GET with retry + exponential backoff on 429/5xx."""
-        client = await self._get_client()
+        session = await self._get_session()
         headers = self._random_headers()
         if extra_headers:
             headers.update(extra_headers)
@@ -80,7 +87,7 @@ class HttpClient:
                 await asyncio.sleep(backoff)
 
             try:
-                resp = await client.get(url, params=params, headers=headers)
+                resp = await session.get(url, params=params, headers=headers)
                 if resp.status_code == 429:
                     logger.warning("Rate limited (429) on %s", url)
                     continue
@@ -88,11 +95,11 @@ class HttpClient:
                     logger.warning("Server error %d on %s", resp.status_code, url)
                     continue
                 return resp
-            except httpx.HTTPError as e:
+            except Exception as e:
                 logger.warning("HTTP error on %s: %s", url, e)
                 last_error = e
 
-        raise last_error or httpx.HTTPError(f"Failed after {self.max_retries} retries: {url}")
+        raise last_error or Exception(f"Failed after {self.max_retries} retries: {url}")
 
     async def get_json(
         self,
@@ -109,5 +116,6 @@ class HttpClient:
         return resp.json()
 
     async def close(self) -> None:
-        if self._client and not self._client.is_closed:
-            await self._client.aclose()
+        if self._session:
+            await self._session.close()
+            self._session = None

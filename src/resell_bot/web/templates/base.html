@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>resell-bot — {% block title %}Dashboard{% endblock %}</title>
+    <script src="https://unpkg.com/htmx.org@2.0.4"></script>
+    <style>
+        :root {
+            --bg: #0f1117;
+            --surface: #1a1d27;
+            --border: #2a2d3a;
+            --text: #e1e4ed;
+            --muted: #8b8fa3;
+            --accent: #6c63ff;
+            --green: #22c55e;
+            --red: #ef4444;
+            --orange: #f59e0b;
+            --blue: #3b82f6;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            line-height: 1.5;
+        }
+        .container { max-width: 1200px; margin: 0 auto; padding: 1rem; }
+        header {
+            background: var(--surface);
+            border-bottom: 1px solid var(--border);
+            padding: 1rem 0;
+            margin-bottom: 1.5rem;
+        }
+        header .container { display: flex; align-items: center; justify-content: space-between; }
+        header h1 { font-size: 1.4rem; font-weight: 700; }
+        header h1 span { color: var(--accent); }
+        nav a {
+            color: var(--muted);
+            text-decoration: none;
+            margin-left: 1.5rem;
+            font-size: 0.9rem;
+        }
+        nav a:hover, nav a.active { color: var(--text); }
+
+        /* Stats bar */
+        .stats {
+            display: flex;
+            gap: 1rem;
+            margin-bottom: 1.5rem;
+            flex-wrap: wrap;
+        }
+        .stat-card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 0.75rem 1.25rem;
+            min-width: 120px;
+            text-align: center;
+        }
+        .stat-card .number { font-size: 1.8rem; font-weight: 700; }
+        .stat-card .label { font-size: 0.75rem; color: var(--muted); text-transform: uppercase; }
+        .stat-new .number { color: var(--green); }
+        .stat-seen .number { color: var(--blue); }
+        .stat-bought .number { color: var(--accent); }
+        .stat-ignored .number { color: var(--muted); }
+
+        /* Filters */
+        .filters {
+            display: flex;
+            gap: 0.5rem;
+            margin-bottom: 1rem;
+            flex-wrap: wrap;
+        }
+        .filter-btn {
+            padding: 0.4rem 1rem;
+            border-radius: 20px;
+            border: 1px solid var(--border);
+            background: var(--surface);
+            color: var(--muted);
+            cursor: pointer;
+            font-size: 0.85rem;
+            text-decoration: none;
+        }
+        .filter-btn:hover { border-color: var(--accent); color: var(--text); }
+        .filter-btn.active { background: var(--accent); color: white; border-color: var(--accent); }
+
+        /* Alert table */
+        .alert-table {
+            width: 100%;
+            border-collapse: collapse;
+            background: var(--surface);
+            border-radius: 8px;
+            overflow: hidden;
+        }
+        .alert-table th {
+            padding: 0.75rem 1rem;
+            text-align: left;
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            color: var(--muted);
+            border-bottom: 1px solid var(--border);
+        }
+        .alert-table td {
+            padding: 0.6rem 1rem;
+            border-bottom: 1px solid var(--border);
+            font-size: 0.9rem;
+            vertical-align: middle;
+        }
+        .alert-table tr:last-child td { border-bottom: none; }
+        .alert-table tr:hover { background: rgba(108, 99, 255, 0.05); }
+
+        /* Status badges */
+        .badge {
+            display: inline-block;
+            padding: 0.2rem 0.6rem;
+            border-radius: 12px;
+            font-size: 0.75rem;
+            font-weight: 600;
+        }
+        .badge-new { background: rgba(34,197,94,0.15); color: var(--green); }
+        .badge-seen { background: rgba(59,130,246,0.15); color: var(--blue); }
+        .badge-bought { background: rgba(108,99,255,0.15); color: var(--accent); }
+        .badge-ignored { background: rgba(139,143,163,0.15); color: var(--muted); }
+
+        /* Margin display */
+        .margin-positive { color: var(--green); font-weight: 700; }
+        .margin-negative { color: var(--red); font-weight: 700; }
+
+        /* Action buttons */
+        .btn {
+            padding: 0.35rem 0.75rem;
+            border-radius: 6px;
+            border: 1px solid var(--border);
+            background: var(--surface);
+            color: var(--text);
+            cursor: pointer;
+            font-size: 0.8rem;
+            text-decoration: none;
+            display: inline-block;
+        }
+        .btn:hover { border-color: var(--accent); }
+        .btn-buy { background: var(--green); color: white; border-color: var(--green); }
+        .btn-buy:hover { opacity: 0.9; }
+        .btn-ignore { color: var(--muted); }
+        .btn-sm { padding: 0.2rem 0.5rem; font-size: 0.75rem; }
+        .actions { display: flex; gap: 0.3rem; }
+
+        /* Detail page */
+        .detail-card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 1.5rem;
+            max-width: 700px;
+        }
+        .detail-card h2 { margin-bottom: 1rem; }
+        .detail-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 0.5rem 0;
+            border-bottom: 1px solid var(--border);
+        }
+        .detail-row:last-child { border-bottom: none; }
+        .detail-label { color: var(--muted); }
+
+        /* Pagination */
+        .pagination {
+            display: flex;
+            gap: 0.5rem;
+            margin-top: 1rem;
+            justify-content: center;
+        }
+
+        /* Book image */
+        .book-thumb {
+            width: 40px;
+            height: 56px;
+            object-fit: cover;
+            border-radius: 3px;
+            background: var(--border);
+        }
+
+        /* Empty state */
+        .empty-state {
+            text-align: center;
+            padding: 3rem;
+            color: var(--muted);
+        }
+
+        /* Settings form */
+        .settings-section {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 1.25rem;
+            margin-bottom: 1rem;
+        }
+        .settings-header {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            margin-bottom: 0.75rem;
+        }
+        .settings-header h3 { margin: 0; font-size: 1rem; }
+        .form-group { margin-bottom: 0.75rem; }
+        .form-group label {
+            display: block;
+            font-size: 0.8rem;
+            color: var(--muted);
+            margin-bottom: 0.3rem;
+        }
+        .form-input {
+            width: 100%;
+            padding: 0.5rem 0.75rem;
+            border-radius: 6px;
+            border: 1px solid var(--border);
+            background: var(--bg);
+            color: var(--text);
+            font-size: 0.85rem;
+        }
+        .form-input:focus {
+            outline: none;
+            border-color: var(--accent);
+        }
+
+        /* Scan status panel */
+        .scan-panel {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 1rem 1.25rem;
+            margin-bottom: 1.5rem;
+        }
+        .scan-header {
+            display: flex;
+            align-items: center;
+            margin-bottom: 0.5rem;
+        }
+        .scan-stat {
+            text-align: center;
+            padding: 0.4rem;
+            background: var(--bg);
+            border-radius: 6px;
+        }
+
+        /* HTMX loading indicator */
+        .htmx-indicator { opacity: 0; transition: opacity 200ms; }
+        .htmx-request .htmx-indicator { opacity: 1; }
+    </style>
+</head>
+<body>
+    <header>
+        <div class="container">
+            <h1><span>resell</span>-bot</h1>
+            <nav>
+                <a href="/" class="{% if active_tab == 'dashboard' %}active{% endif %}">Dashboard</a>
+                <a href="/books" class="{% if active_tab == 'books' %}active{% endif %}">Livres</a>
+                <a href="/settings" class="{% if active_tab == 'settings' %}active{% endif %}">Notifications</a>
+            </nav>
+        </div>
+    </header>
+    <div class="container">
+        {% block content %}{% endblock %}
+    </div>
+</body>
+</html>

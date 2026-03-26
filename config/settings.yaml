@@ -1,9 +1,15 @@
 scan:
-  interval_minutes: 5
   delay_between_requests:
-    min_seconds: 2
-    max_seconds: 5
-  max_concurrent_scrapers: 2
+    min_seconds: 0.3
+    max_seconds: 0.8
+  max_concurrent_workers: 3
+  priorities:
+    hot:
+      interval_seconds: 120
+    warm:
+      interval_seconds: 1200
+    cold:
+      interval_seconds: 14400
 
 http:
   timeout_seconds: 15
@@ -21,7 +27,7 @@ http:
     - "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36"
 
 database:
-  path: "data/resell_bot.db"
+  path: "data/resell_bot_new.db"
 
 notifications:
   telegram:

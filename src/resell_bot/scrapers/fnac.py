@@ -1,25 +1,26 @@
-"""Scraper stub for fnac.com marketplace (occasion/reconditionné).
+"""Scraper for fnac.com marketplace (occasion/reconditionné).
 
-TODO: Phase 5 — explore FNAC SearchResult page, implement.
+FNAC sells new and used books via their marketplace.
+Priority: P2 — implement after Rakuten + Recyclivre.
 """
 
 import logging
 
 from resell_bot.core.models import Listing
 from resell_bot.scrapers.base import BaseScraper
+from resell_bot.utils.http_client import HttpClient
 
 logger = logging.getLogger(__name__)
 
 
 class FnacScraper(BaseScraper):
+    def __init__(self, http_client: HttpClient) -> None:
+        self.client = http_client
+
     @property
     def platform_name(self) -> str:
         return "fnac"
 
-    async def search(self, query: str) -> list[Listing]:
-        logger.info("FnacScraper.search() not yet implemented")
-        return []
-
-    async def get_price(self, isbn: str) -> float | None:
-        logger.info("FnacScraper.get_price() not yet implemented")
+    async def get_offer(self, isbn: str) -> Listing | None:
+        logger.debug("FnacScraper.get_offer() not yet implemented")
         return None

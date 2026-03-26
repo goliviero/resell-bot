@@ -7,77 +7,85 @@ resell-bot/
 ├── CLAUDE.md                       # Project rules for Claude Code
 ├── ARCHITECTURE.md                 # This file
 ├── README.md                       # Setup + usage guide
-├── pyproject.toml                  # Dependencies (httpx, bs4, lxml, apscheduler, pyyaml)
+├── pyproject.toml                  # Dependencies
 ├── .env.example                    # TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID
 ├── .gitignore
 ├── config/
-│   ├── settings.yaml               # Scan interval, HTTP config, dedup cooldown
-│   └── watchlists/
-│       └── livres.yaml             # Keywords, ISBNs, price filters
+│   └── settings.yaml               # Scan interval, HTTP config, dedup cooldown
 ├── src/resell_bot/
 │   ├── __init__.py
 │   ├── __main__.py                 # python -m resell_bot entry
 │   ├── main.py                     # CLI entry, config loading, startup
 │   ├── scheduler.py                # APScheduler orchestration, scan loop
+│   ├── priority.py                 # Priority tier management (HOT/WARM/COLD)
 │   ├── core/
-│   │   ├── models.py               # Listing, PriceCheck, Alert dataclasses
+│   │   ├── models.py               # Listing, ReferencePrice, Alert
 │   │   ├── database.py             # SQLite storage + dedup (no ORM)
 │   │   ├── notifier.py             # Telegram Bot API via httpx
-│   │   └── price_engine.py         # Margin calculation, deal detection
+│   │   └── price_engine.py         # Deal detection (price vs budget)
 │   ├── scrapers/
-│   │   ├── base.py                 # ABC: search(query), get_price(isbn)
-│   │   ├── chasseauxlivres.py      # Phase 1 — book discovery via REST API
-│   │   ├── momox.py                # Phase 2 — buyback pricing (stub)
-│   │   ├── recyclivre.py           # Phase 3 — buyback pricing (stub)
-│   │   ├── rakuten.py              # Phase 4 — marketplace (stub)
-│   │   └── fnac.py                 # Phase 5 — marketplace (stub)
-│   └── utils/
-│       ├── http_client.py          # Async httpx client: retry, backoff, UA rotation, rate limit
-│       └── isbn.py                 # ISBN-10/13 validation, conversion, text extraction
+│   │   ├── base.py                 # ABC: get_offer(isbn) -> Listing | None
+│   │   ├── momox.py                # Momox Shop — HTML fallback
+│   │   ├── momox_api.py            # Momox Shop — PRIMARY (Medimops JSON API)
+│   │   ├── recyclivre.py           # Recyclivre — stub (P1)
+│   │   ├── rakuten.py              # Rakuten — stub (P1)
+│   │   ├── fnac.py                 # FNAC — stub (P2)
+│   │   ├── ebay.py                 # eBay — stub (P2)
+│   │   └── amazon.py               # Amazon — stub (P3)
+│   ├── utils/
+│   │   ├── http_client.py          # curl_cffi async: retry, backoff, UA rotation, Cloudflare bypass
+│   │   └── isbn.py                 # ISBN-10/13 validation, conversion, text extraction
+│   └── web/
+│       ├── app.py                  # FastAPI dashboard
+│       └── templates/              # Jinja2 + HTMX (dark mode)
+│           └── partials/
+│               └── scan_status.html  # Live scan progress panel
 ├── tests/
-│   ├── test_database.py            # 5 tests — save, dedup, query
-│   ├── test_isbn.py                # 14 tests — validation, conversion, extraction
-│   ├── test_price_engine.py        # 8 tests — margin, thresholds, platform selection
+│   ├── test_database.py            # 16 tests
+│   ├── test_isbn.py                # 14 tests
+│   ├── test_price_engine.py        # 5 tests
+│   ├── test_priority.py            # Priority tier tests
+│   ├── test_web.py                 # 9 tests
 │   └── test_scrapers/
-│       └── test_chasseauxlivres.py # 8 tests — HTML parsing, edge cases
+│       ├── test_momox.py           # 14 tests
+│       └── test_momox_api.py       # Medimops API tests
 ├── scripts/
-│   ├── setup_telegram.py           # Interactive Telegram bot setup helper
-│   └── activity_log.py             # Symlink → dotfiles/scripts/activity_log.py
+│   ├── import_cal_watchlist.py     # CaL CSV → reference_prices
+│   ├── seed_mock_db.py            # Mock DB (15 classic books) for development
+│   └── setup_telegram.py          # Interactive Telegram bot setup
 └── docs/
-    ├── decisions.md                # DEC-001..005
-    ├── SWOT.md                     # Strengths, weaknesses, opportunities, threats
-    ├── TODO.md                     # Phase backlog
+    ├── decisions.md                # DEC-001..010
+    ├── SWOT.md                     # Strategic analysis + scraping feasibility
+    ├── TODO.md                     # Task backlog
+    ├── bdd_franck_26032026.csv     # Reference CaL export (1380 ISBNs)
     └── activity_log.jsonl          # Session activity log
 ```
 
 ## Data Flow
 
 ```
-1. main.py loads config (settings.yaml + watchlists/livres.yaml + .env)
-2. scheduler.py creates APScheduler job → run_scan() every N minutes
-3. run_scan() iterates keywords/ISBNs from watchlist:
-   a. Discovery scrapers (CaL) → search(query) → list[Listing]
-   b. For each Listing with ISBN:
-      - Check dedup (database.was_recently_alerted)
-      - Save listing to SQLite
-      - Query buyback scrapers (Momox, Recyclivre) → get_price(isbn)
-      - price_engine.evaluate(listing, buyback_prices) → Alert | None
-   c. For each Alert:
-      - notifier.send_alert() → Telegram message
-      - database.save_alert() → dedup tracking
+1. CaL CSV export → import_cal_watchlist.py → reference_prices table (1380 ISBNs + max buy prices)
+2. Scheduler runs every 30s, checks tier intervals (HOT 2min, WARM 20min, COLD 4h)
+3. For overdue tier: parallel scan via Semaphore(3) using Medimops JSON API
+4. Each scan: API call → update isbn_availability → check deal → alert
+5. Priority auto-refresh after each cycle
+6. Dashboard: alerts + books with availability + live scan progress
 ```
 
 ## Key Design Decisions
 
-- **DEC-001**: httpx async for all HTTP (HTTP/2 support, single client)
+- **DEC-001**: curl_cffi for HTTP (TLS fingerprint impersonation bypasses Cloudflare)
 - **DEC-002**: SQLite stdlib, no ORM (simple schema)
-- **DEC-003**: CaL = discovery only (prices are JS-loaded, not scraped)
+- **DEC-003**: CaL = CSV watchlist, not scraped
 - **DEC-004**: Telegram via raw Bot API (no wrapper lib)
-- **DEC-005**: Phase-based scraper rollout (one site at a time)
+- **DEC-005**: Platform rollout by scraping feasibility (easy → hard)
+- **DEC-006**: Buy model (find cheap books to resell), not buyback model
+- **DEC-007**: Medimops JSON API over HTML scraping for Momox (~80ms vs ~2s)
+- **DEC-008**: Priority tiers HOT/WARM/COLD for scan scheduling
 
 ## Stack
 
-- Python 3.12+, stdlib only for core logic
-- httpx (async HTTP/2), BeautifulSoup4 + lxml (parsing), APScheduler
+- Python 3.12+, curl_cffi, BeautifulSoup4 + lxml, APScheduler
+- FastAPI + Jinja2 + HTMX (dashboard)
 - SQLite3 (storage), pyyaml (config), python-dotenv (secrets)
-- 44 tests via pytest + pytest-asyncio
+- 92 tests via pytest + pytest-asyncio

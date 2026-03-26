@@ -1,0 +1,22 @@
+<div class="stats">
+    <div class="stat-card stat-new">
+        <div class="number">{{ stats.get('new', 0) }}</div>
+        <div class="label">Nouvelles</div>
+    </div>
+    <div class="stat-card stat-seen">
+        <div class="number">{{ stats.get('seen', 0) }}</div>
+        <div class="label">Vues</div>
+    </div>
+    <div class="stat-card stat-bought">
+        <div class="number">{{ stats.get('bought', 0) }}</div>
+        <div class="label">Achetees</div>
+    </div>
+    <div class="stat-card stat-ignored">
+        <div class="number">{{ stats.get('ignored', 0) }}</div>
+        <div class="label">Ignorees</div>
+    </div>
+    <div class="stat-card">
+        <div class="number">{{ stats.get('total', 0) }}</div>
+        <div class="label">Total</div>
+    </div>
+</div>

@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+{% block title %}Alerte #{{ alert.id }}{% endblock %}
+{% block content %}
+
+<a href="/" class="btn" style="margin-bottom: 1rem;">&larr; Retour</a>
+
+<div class="detail-card">
+    <h2>{{ alert.title }}</h2>
+
+    {% if alert.image_url %}
+    <img src="{{ alert.image_url }}" alt="" style="max-width: 150px; border-radius: 6px; margin-bottom: 1rem;">
+    {% endif %}
+
+    <div class="detail-row">
+        <span class="detail-label">Auteur</span>
+        <span>{{ alert.author or "—" }}</span>
+    </div>
+    <div class="detail-row">
+        <span class="detail-label">ISBN</span>
+        <span>{{ alert.isbn or "—" }}</span>
+    </div>
+    <div class="detail-row">
+        <span class="detail-label">Plateforme</span>
+        <span>{{ alert.platform }}</span>
+    </div>
+    <div class="detail-row">
+        <span class="detail-label">Prix de vente</span>
+        <span>{{ "%.2f"|format(alert.buy_price) }}&euro;</span>
+    </div>
+    <div class="detail-row">
+        <span class="detail-label">Budget max</span>
+        <span>{{ "%.2f"|format(alert.max_buy_price) }}&euro;</span>
+    </div>
+    <div class="detail-row">
+        <span class="detail-label">Economie</span>
+        <span class="margin-positive">
+            {{ "%+.2f"|format(alert.savings) }}&euro;
+        </span>
+    </div>
+    <div class="detail-row">
+        <span class="detail-label">Etat</span>
+        <span>{{ alert.condition or "—" }}</span>
+    </div>
+    <div class="detail-row">
+        <span class="detail-label">Statut</span>
+        <span class="badge badge-{{ alert.status }}">{{ alert.status }}</span>
+    </div>
+    <div class="detail-row">
+        <span class="detail-label">Date</span>
+        <span>{{ alert.notified_at[:19] }}</span>
+    </div>
+
+    <div style="margin-top: 1.5rem; display: flex; gap: 0.5rem; flex-wrap: wrap;">
+        <form method="post" action="/buy/{{ alert.id }}" style="display: inline;">
+            <button type="submit" class="btn btn-buy" style="font-size: 0.95rem; padding: 0.5rem 1.2rem;">
+                ACHETER SUR MOMOX
+            </button>
+        </form>
+        <a href="{{ alert.url }}" target="_blank" class="btn">Voir sur Momox</a>
+        {% if alert.status != 'bought' %}
+        <button class="btn"
+                hx-post="/alert/{{ alert.id }}/status/bought"
+                hx-swap="none"
+                onclick="this.innerText='Achete !'; this.disabled=true;">
+            Marquer achete
+        </button>
+        {% endif %}
+        {% if alert.status != 'ignored' %}
+        <button class="btn btn-ignore"
+                hx-post="/alert/{{ alert.id }}/status/ignored"
+                hx-swap="none"
+                onclick="this.innerText='Ignore'; this.disabled=true;">
+            Ignorer
+        </button>
+        {% endif %}
+    </div>
+</div>
+
+{% endblock %}

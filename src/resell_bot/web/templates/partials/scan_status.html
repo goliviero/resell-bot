@@ -1,0 +1,73 @@
+<div class="scan-panel">
+    <div class="scan-header">
+        <strong>Scan Momox</strong>
+        {% if live and live.get('running') %}
+        <span class="badge badge-new" style="margin-left: 0.5rem;">EN COURS</span>
+        {% else %}
+        <span class="badge badge-seen" style="margin-left: 0.5rem;">IDLE</span>
+        {% endif %}
+    </div>
+
+    <!-- Progress bar (only when scanning) -->
+    {% if live and live.get('running') and live.get('total_count', 0) > 0 %}
+    <div style="margin: 0.5rem 0;">
+        <div style="display: flex; justify-content: space-between; font-size: 0.75rem; color: var(--muted); margin-bottom: 0.25rem;">
+            <span>{{ live.get('current_tier', '').upper() }} — {{ live.get('scanned_count', 0) }}/{{ live.get('total_count', 0) }}</span>
+            <span>{{ ((live.get('scanned_count', 0) / live.get('total_count', 1)) * 100)|int }}%</span>
+        </div>
+        <div style="background: var(--border); border-radius: 4px; height: 6px; overflow: hidden;">
+            <div style="background: var(--green); height: 100%; width: {{ ((live.get('scanned_count', 0) / live.get('total_count', 1)) * 100)|int }}%; transition: width 0.3s;"></div>
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Stats grid -->
+    <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.5rem; margin-top: 0.5rem;">
+        <div class="scan-stat">
+            <div style="font-size: 1.2rem; font-weight: 700;">{{ scan.total_checked }}</div>
+            <div style="font-size: 0.7rem; color: var(--muted);">SCANNES</div>
+        </div>
+        <div class="scan-stat">
+            <div style="font-size: 1.2rem; font-weight: 700; color: var(--green);">{{ scan.available }}</div>
+            <div style="font-size: 0.7rem; color: var(--muted);">DISPOS</div>
+        </div>
+        <div class="scan-stat">
+            <div style="font-size: 1.2rem; font-weight: 700; color: var(--red);">{{ scan.unavailable }}</div>
+            <div style="font-size: 0.7rem; color: var(--muted);">INDISPOS</div>
+        </div>
+        <div class="scan-stat">
+            <div style="font-size: 1.2rem; font-weight: 700; color: var(--muted);">{{ scan.unchecked }}</div>
+            <div style="font-size: 0.7rem; color: var(--muted);">EN ATTENTE</div>
+        </div>
+    </div>
+
+    <!-- Tier details -->
+    <div style="margin-top: 0.75rem; font-size: 0.8rem;">
+        {% for tier_name in ['hot', 'warm', 'cold'] %}
+        {% set tier = scan.tiers.get(tier_name, {}) %}
+        <div style="display: flex; justify-content: space-between; padding: 0.25rem 0; border-bottom: 1px solid var(--border);">
+            <span>
+                {% if tier_name == 'hot' %}
+                <span style="color: var(--red);">&#9679;</span> HOT (2 min)
+                {% elif tier_name == 'warm' %}
+                <span style="color: var(--orange);">&#9679;</span> WARM (20 min)
+                {% else %}
+                <span style="color: var(--blue);">&#9679;</span> COLD (4h)
+                {% endif %}
+            </span>
+            <span style="color: var(--muted);">
+                {{ tier.get('count', 0) }} ISBNs
+                {% if tier.get('newest_check') %}
+                — dernier scan {{ tier.get('newest_check', '')[:16] }}
+                {% endif %}
+            </span>
+        </div>
+        {% endfor %}
+    </div>
+
+    {% if scan.last_scan_at %}
+    <div style="margin-top: 0.5rem; font-size: 0.75rem; color: var(--muted); text-align: right;">
+        Dernier scan: {{ scan.last_scan_at[:19] }}
+    </div>
+    {% endif %}
+</div>

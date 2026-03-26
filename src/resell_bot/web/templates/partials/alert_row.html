@@ -1,0 +1,53 @@
+<tr id="alert-{{ alert.id }}">
+    <td>
+        {% if alert.image_url %}
+        <img src="{{ alert.image_url }}" alt="" class="book-thumb" loading="lazy">
+        {% else %}
+        <div class="book-thumb" style="display:flex;align-items:center;justify-content:center;font-size:0.6rem;color:var(--muted);">N/A</div>
+        {% endif %}
+    </td>
+    <td>
+        <a href="/alert/{{ alert.id }}" style="color: var(--text); text-decoration: none;">
+            <strong>{{ alert.title[:50] }}{% if alert.title|length > 50 %}...{% endif %}</strong>
+        </a>
+        {% if alert.author %}
+        <br><small style="color: var(--muted);">{{ alert.author }}</small>
+        {% endif %}
+        {% if alert.isbn %}
+        <br><small style="color: var(--muted);">{{ alert.isbn }}</small>
+        {% endif %}
+    </td>
+    <td>{{ "%.2f"|format(alert.buy_price) }}&euro; <small style="color:var(--muted);">{{ alert.platform }}</small></td>
+    <td>{{ "%.2f"|format(alert.max_buy_price) }}&euro;</td>
+    <td>
+        <span class="margin-positive">
+            {{ "%+.2f"|format(alert.savings) }}&euro;
+        </span>
+    </td>
+    <td><span class="badge badge-{{ alert.status }}">{{ alert.status }}</span></td>
+    <td><small style="color:var(--muted);">{{ alert.notified_at[:16] }}</small></td>
+    <td>
+        <div class="actions">
+            <a href="{{ alert.url }}" target="_blank" class="btn btn-sm" title="Voir sur Momox" style="text-decoration:none;">Voir sur Momox</a>
+            <form method="post" action="/buy/{{ alert.id }}" style="display: inline;">
+                <button type="submit" class="btn btn-buy btn-sm" title="Acheter sur Momox">ACHETER</button>
+            </form>
+            {% if alert.status != 'bought' %}
+            <button class="btn btn-sm"
+                    hx-post="/alert/{{ alert.id }}/status/bought"
+                    hx-target="#alert-{{ alert.id }}"
+                    hx-swap="outerHTML"
+                    hx-trigger="click"
+                    title="Marquer comme achete">&#10003;</button>
+            {% endif %}
+            {% if alert.status != 'ignored' %}
+            <button class="btn btn-ignore btn-sm"
+                    hx-post="/alert/{{ alert.id }}/status/ignored"
+                    hx-target="#alert-{{ alert.id }}"
+                    hx-swap="outerHTML"
+                    hx-trigger="click"
+                    title="Ignorer">&times;</button>
+            {% endif %}
+        </div>
+    </td>
+</tr>

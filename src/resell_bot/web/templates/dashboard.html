@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+{% block title %}Dashboard{% endblock %}
+{% block content %}
+
+<!-- Scan status — auto-refresh every 5s -->
+<div id="scan-panel" hx-get="/scan-status" hx-trigger="every 5s" hx-swap="innerHTML">
+    {% include "partials/scan_status.html" %}
+</div>
+
+<!-- Stats -->
+<div id="stats-bar" hx-get="/stats" hx-trigger="statusChanged from:body" hx-swap="innerHTML">
+    {% include "partials/stats.html" %}
+</div>
+
+<!-- Filters -->
+<div class="filters">
+    <a href="/" class="filter-btn {% if not current_status %}active{% endif %}">Toutes</a>
+    <a href="/?status=new" class="filter-btn {% if current_status == 'new' %}active{% endif %}">Nouvelles</a>
+    <a href="/?status=seen" class="filter-btn {% if current_status == 'seen' %}active{% endif %}">Vues</a>
+    <a href="/?status=bought" class="filter-btn {% if current_status == 'bought' %}active{% endif %}">Achetees</a>
+    <a href="/?status=ignored" class="filter-btn {% if current_status == 'ignored' %}active{% endif %}">Ignorees</a>
+</div>
+
+<!-- Alert list -->
+{% if alerts %}
+<table class="alert-table">
+    <thead>
+        <tr>
+            <th></th>
+            <th>Livre</th>
+            <th>Prix</th>
+            <th>Budget</th>
+            <th>Economie</th>
+            <th>Statut</th>
+            <th>Date</th>
+            <th>Actions</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for alert in alerts %}
+        {% include "partials/alert_row.html" %}
+        {% endfor %}
+    </tbody>
+</table>
+
+<!-- Pagination -->
+<div class="pagination">
+    {% if page > 1 %}
+    <a href="/?page={{ page - 1 }}{% if current_status %}&status={{ current_status }}{% endif %}" class="btn btn-sm">&laquo; Precedent</a>
+    {% endif %}
+    {% if alerts|length == per_page %}
+    <a href="/?page={{ page + 1 }}{% if current_status %}&status={{ current_status }}{% endif %}" class="btn btn-sm">Suivant &raquo;</a>
+    {% endif %}
+</div>
+{% else %}
+<div class="empty-state">
+    <p>Aucune alerte{% if current_status %} avec le statut "{{ current_status }}"{% endif %}.</p>
+    <p style="margin-top: 0.5rem; font-size: 0.85rem;">Les alertes apparaitront ici quand le bot detectera des bonnes affaires.</p>
+</div>
+{% endif %}
+
+{% endblock %}
