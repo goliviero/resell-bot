@@ -1,15 +1,9 @@
 scan:
+  # Continuous loop: 1 request at a time, ~1 req/s = safe for 1 IP
+  # Full cycle ~23 min for 1380 ISBNs. Add VPS to divide.
   delay_between_requests:
-    min_seconds: 0.3
-    max_seconds: 0.8
-  max_concurrent_workers: 3
-  priorities:
-    hot:
-      interval_seconds: 120
-    warm:
-      interval_seconds: 1200
-    cold:
-      interval_seconds: 14400
+    min_seconds: 0.8
+    max_seconds: 1.2
 
 http:
   timeout_seconds: 15

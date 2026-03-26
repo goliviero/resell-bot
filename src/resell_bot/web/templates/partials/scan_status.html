@@ -6,17 +6,21 @@
         {% else %}
         <span class="badge badge-seen" style="margin-left: 0.5rem;">IDLE</span>
         {% endif %}
+        {% if live and live.get('cycle_count', 0) > 0 %}
+        <span style="margin-left: auto; font-size: 0.75rem; color: var(--muted);">Cycle #{{ live.get('cycle_count', 0) }}</span>
+        {% endif %}
     </div>
 
-    <!-- Progress bar (only when scanning) -->
+    <!-- Progress bar -->
     {% if live and live.get('running') and live.get('total_count', 0) > 0 %}
+    {% set pct = ((live.get('scanned_count', 0) / live.get('total_count', 1)) * 100)|int %}
     <div style="margin: 0.5rem 0;">
         <div style="display: flex; justify-content: space-between; font-size: 0.75rem; color: var(--muted); margin-bottom: 0.25rem;">
-            <span>{{ live.get('current_tier', '').upper() }} — {{ live.get('scanned_count', 0) }}/{{ live.get('total_count', 0) }}</span>
-            <span>{{ ((live.get('scanned_count', 0) / live.get('total_count', 1)) * 100)|int }}%</span>
+            <span>{{ live.get('scanned_count', 0) }} / {{ live.get('total_count', 0) }} ISBNs</span>
+            <span>{{ pct }}%</span>
         </div>
         <div style="background: var(--border); border-radius: 4px; height: 6px; overflow: hidden;">
-            <div style="background: var(--green); height: 100%; width: {{ ((live.get('scanned_count', 0) / live.get('total_count', 1)) * 100)|int }}%; transition: width 0.3s;"></div>
+            <div style="background: var(--green); height: 100%; width: {{ pct }}%; transition: width 0.3s;"></div>
         </div>
     </div>
     {% endif %}
@@ -41,28 +45,26 @@
         </div>
     </div>
 
-    <!-- Tier details -->
-    <div style="margin-top: 0.75rem; font-size: 0.8rem;">
-        {% for tier_name in ['hot', 'warm', 'cold'] %}
-        {% set tier = scan.tiers.get(tier_name, {}) %}
+    <!-- Cycle info -->
+    <div style="margin-top: 0.75rem; font-size: 0.8rem; color: var(--muted);">
+        {% if live and live.get('last_cycle_duration') %}
         <div style="display: flex; justify-content: space-between; padding: 0.25rem 0; border-bottom: 1px solid var(--border);">
-            <span>
-                {% if tier_name == 'hot' %}
-                <span style="color: var(--red);">&#9679;</span> HOT (2 min)
-                {% elif tier_name == 'warm' %}
-                <span style="color: var(--orange);">&#9679;</span> WARM (20 min)
-                {% else %}
-                <span style="color: var(--blue);">&#9679;</span> COLD (4h)
-                {% endif %}
-            </span>
-            <span style="color: var(--muted);">
-                {{ tier.get('count', 0) }} ISBNs
-                {% if tier.get('newest_check') %}
-                — dernier scan {{ tier.get('newest_check', '')[:16] }}
-                {% endif %}
-            </span>
+            <span>Dernier cycle</span>
+            <span>{{ "%.0f"|format(live.get('last_cycle_duration', 0)) }}s ({{ "%.1f"|format(live.get('last_cycle_duration', 0) / 60) }} min)</span>
         </div>
-        {% endfor %}
+        {% endif %}
+        {% if live and live.get('deals_found', 0) > 0 %}
+        <div style="display: flex; justify-content: space-between; padding: 0.25rem 0; border-bottom: 1px solid var(--border);">
+            <span>Deals ce cycle</span>
+            <span style="color: var(--green); font-weight: 700;">{{ live.get('deals_found', 0) }}</span>
+        </div>
+        {% endif %}
+        {% if live and live.get('available_found', 0) > 0 %}
+        <div style="display: flex; justify-content: space-between; padding: 0.25rem 0; border-bottom: 1px solid var(--border);">
+            <span>Dispos ce cycle</span>
+            <span>{{ live.get('available_found', 0) }}</span>
+        </div>
+        {% endif %}
     </div>
 
     {% if scan.last_scan_at %}

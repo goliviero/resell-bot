@@ -116,11 +116,8 @@ def main() -> None:
 
     async def _run_continuous() -> None:
         scheduler.start()
-        await scheduler.run_scan()
-        # Keep running — APScheduler handles periodic scans
         try:
-            while True:
-                await asyncio.sleep(1)
+            await scheduler.run_continuous()
         except asyncio.CancelledError:
             pass
         finally:
