@@ -356,8 +356,12 @@ async def toggle_email_config(config_id: int):
 # ── Admin ─────────────────────────────────────────────────────
 
 @app.get("/admin", response_class=HTMLResponse)
-async def admin_page(request: Request, msg: str | None = None):
-    """Admin control panel."""
+async def admin_page(
+    request: Request,
+    msg: str | None = None,
+    log_page: int = Query(1, ge=1),
+):
+    """Admin control panel with notification log."""
     db = get_db()
     from resell_bot.core.notifier import Notifier
     notifier = Notifier(db)
@@ -365,6 +369,11 @@ async def admin_page(request: Request, msg: str | None = None):
     scan_overview = db.get_scan_overview("momox_shop")
     stats = db.get_alert_stats()
     live_status = _scheduler.scan_status if _scheduler else {}
+
+    log_per_page = 25
+    notif_log = db.get_notification_log(limit=log_per_page, offset=(log_page - 1) * log_per_page)
+    notif_log_total = db.count_notification_log()
+
     return templates.TemplateResponse(request, "admin.html", {
         "scan": scan_overview,
         "live": live_status,
@@ -372,6 +381,10 @@ async def admin_page(request: Request, msg: str | None = None):
         "notif_channels": notifier.get_status_summary(),
         "message": msg or "",
         "active_tab": "admin",
+        "notif_log": notif_log,
+        "notif_log_total": notif_log_total,
+        "log_page": log_page,
+        "log_per_page": log_per_page,
     })
 
 

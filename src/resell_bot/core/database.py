@@ -82,10 +82,25 @@ CREATE TABLE IF NOT EXISTS email_configs (
     created_at TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS notification_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    alert_id INTEGER,
+    channel TEXT NOT NULL,
+    channel_name TEXT,
+    title TEXT,
+    isbn TEXT,
+    price REAL,
+    savings REAL,
+    success INTEGER NOT NULL DEFAULT 1,
+    error TEXT,
+    sent_at TEXT NOT NULL
+);
+
 CREATE INDEX IF NOT EXISTS idx_listings_isbn ON listings(isbn);
 CREATE INDEX IF NOT EXISTS idx_listings_url ON listings(url);
 CREATE INDEX IF NOT EXISTS idx_alerts_listing_url ON alerts(listing_url);
 CREATE INDEX IF NOT EXISTS idx_alerts_status ON alerts(status);
+CREATE INDEX IF NOT EXISTS idx_notification_log_sent ON notification_log(sent_at);
 CREATE INDEX IF NOT EXISTS idx_availability_priority ON isbn_availability(priority, platform);
 """
 
@@ -667,6 +682,43 @@ class Database:
         )
         self.conn.commit()
         return cursor.rowcount > 0
+
+    # ── Notification Log ──────────────────────────────────────
+
+    def log_notification(
+        self,
+        alert_id: int | None,
+        channel: str,
+        channel_name: str,
+        title: str,
+        isbn: str | None,
+        price: float | None,
+        savings: float | None,
+        success: bool,
+        error: str | None = None,
+    ) -> None:
+        """Append an entry to the notification log."""
+        self.conn.execute(
+            """INSERT INTO notification_log
+               (alert_id, channel, channel_name, title, isbn, price, savings, success, error, sent_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (alert_id, channel, channel_name, title, isbn, price, savings,
+             int(success), error, datetime.now().isoformat()),
+        )
+        self.conn.commit()
+
+    def get_notification_log(self, limit: int = 100, offset: int = 0) -> list[dict]:
+        """Get notification log entries, newest first."""
+        rows = self.conn.execute(
+            "SELECT * FROM notification_log ORDER BY sent_at DESC LIMIT ? OFFSET ?",
+            (limit, offset),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+    def count_notification_log(self) -> int:
+        """Count total notification log entries."""
+        row = self.conn.execute("SELECT COUNT(*) FROM notification_log").fetchone()
+        return row[0]
 
     # ── Cleanup ───────────────────────────────────────────────
 

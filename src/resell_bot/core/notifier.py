@@ -54,18 +54,34 @@ class Notifier:
         return channels
 
     async def send_alert(self, alert: Alert) -> bool:
-        """Send a deal alert to Discord + Email. Returns True if at least one succeeded."""
+        """Send a deal alert to Discord + Email. Logs each attempt."""
         self.reload_channels()
         results = []
 
         for wh in self._discord_webhooks:
-            results.append(await send_discord_alert(wh["url"], alert))
+            ok = await send_discord_alert(wh["url"], alert)
+            results.append(ok)
+            if self.db:
+                self.db.log_notification(
+                    alert_id=None, channel="discord", channel_name=wh["name"],
+                    title=alert.listing.title, isbn=alert.listing.isbn,
+                    price=alert.listing.price, savings=alert.savings,
+                    success=ok, error=None if ok else "webhook error",
+                )
 
         for ec in self._email_configs:
-            results.append(send_email_alert(
+            ok = send_email_alert(
                 ec["smtp_host"], ec["smtp_port"], ec["smtp_user"], ec["smtp_password"],
                 ec["email_to"], alert, bool(ec["smtp_use_tls"]),
-            ))
+            )
+            results.append(ok)
+            if self.db:
+                self.db.log_notification(
+                    alert_id=None, channel="email", channel_name=ec["label"],
+                    title=alert.listing.title, isbn=alert.listing.isbn,
+                    price=alert.listing.price, savings=alert.savings,
+                    success=ok, error=None if ok else "smtp error",
+                )
 
         if not results:
             logger.debug("No notification channels configured — alert not sent")

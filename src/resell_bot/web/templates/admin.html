@@ -88,6 +88,79 @@
             </form>
         </div>
     </div>
+
+    <!-- ── Notification Log ─────────────────────────────────── -->
+    <div class="settings-section" style="margin-top: 1rem;">
+        <div class="settings-header">
+            <h3>Historique des notifications</h3>
+            <span class="badge badge-seen">{{ notif_log_total }} total</span>
+        </div>
+
+        {% if notif_log %}
+        <table class="alert-table" style="font-size: 0.82rem;">
+            <thead>
+                <tr>
+                    <th>Date</th>
+                    <th>Canal</th>
+                    <th>Livre</th>
+                    <th>ISBN</th>
+                    <th>Prix</th>
+                    <th>Economie</th>
+                    <th>Status</th>
+                </tr>
+            </thead>
+            <tbody>
+            {% for entry in notif_log %}
+                <tr>
+                    <td style="white-space: nowrap; font-size: 0.75rem; color: var(--muted);">{{ entry.sent_at[:16] }}</td>
+                    <td>
+                        {% if entry.channel == 'discord' %}
+                        <span style="color: #5865F2;">Discord</span>
+                        {% elif entry.channel == 'email' %}
+                        <span style="color: var(--orange);">Email</span>
+                        {% else %}
+                        {{ entry.channel }}
+                        {% endif %}
+                        <small style="color: var(--muted);">({{ entry.channel_name }})</small>
+                    </td>
+                    <td>{{ (entry.title or '—')[:40] }}{% if entry.title and entry.title|length > 40 %}...{% endif %}</td>
+                    <td style="font-family: monospace; font-size: 0.75rem;">{{ entry.isbn or '—' }}</td>
+                    <td>{% if entry.price %}{{ "%.2f"|format(entry.price) }}&euro;{% else %}—{% endif %}</td>
+                    <td>
+                        {% if entry.savings %}
+                        <span class="margin-positive">+{{ "%.2f"|format(entry.savings) }}&euro;</span>
+                        {% else %}—{% endif %}
+                    </td>
+                    <td>
+                        {% if entry.success %}
+                        <span style="color: var(--green);">&#10003;</span>
+                        {% else %}
+                        <span style="color: var(--red);" title="{{ entry.error or '' }}">&#10007;</span>
+                        {% endif %}
+                    </td>
+                </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+
+        <!-- Pagination -->
+        <div class="pagination" style="margin-top: 0.75rem;">
+            {% if log_page > 1 %}
+            <a href="/admin?log_page={{ log_page - 1 }}" class="btn btn-sm">&laquo; Precedent</a>
+            {% endif %}
+            <span style="color: var(--muted); font-size: 0.8rem; padding: 0.2rem 0.5rem;">
+                Page {{ log_page }} / {{ ((notif_log_total - 1) // log_per_page + 1) if notif_log_total > 0 else 1 }}
+            </span>
+            {% if notif_log|length == log_per_page %}
+            <a href="/admin?log_page={{ log_page + 1 }}" class="btn btn-sm">Suivant &raquo;</a>
+            {% endif %}
+        </div>
+        {% else %}
+        <p style="color: var(--muted); font-size: 0.85rem;">
+            Aucune notification envoyee pour le moment. L'historique apparaitra ici a chaque alerte detectee.
+        </p>
+        {% endif %}
+    </div>
 </div>
 
 {% endblock %}
