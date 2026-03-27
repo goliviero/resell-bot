@@ -74,7 +74,8 @@ class TestNotifierConfig:
     def test_status_summary(self, tmp_path):
         db = Database(tmp_path / "test.db")
         db.add_discord_webhook("Alertes", "https://discord.com/api/webhooks/1/a")
-        db.add_email_config("Gmail", "a@b.com", "smtp.test.com", 587, "user", "pass")
+        db.set_smtp_config("smtp.test.com", 587, "user", "pass")
+        db.add_email_subscriber("Gmail", "a@b.com")
         n = Notifier(db)
         n.reload_channels()
         summary = n.get_status_summary()

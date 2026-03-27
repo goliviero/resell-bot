@@ -90,3 +90,11 @@
 **Date:** 2026-03-26
 **Decision:** Replace HOT/WARM/COLD tier-based scheduling with a continuous parallel loop that scans ALL 1380 ISBNs every ~3 minutes. 3 asyncio workers with Semaphore, 0.2-0.4s delay between requests per worker (~10 req/s).
 **Rationale:** The Medimops JSON API is lightweight (~80ms, no Cloudflare) and handles 10 req/s without issue. With 3 workers, a full cycle completes in ~3 min — which means every ISBN is checked every 3 min regardless of value. This eliminates the risk of missing a rare book because it was classified COLD. Supersedes DEC-008.
+
+---
+
+## DEC-012 — Tampermonkey userscript over Playwright for auto-buy [ACTIVE]
+
+**Date:** 2026-03-27
+**Decision:** Replace Playwright headless browser automation with a `webbrowser.open()` call + Tampermonkey userscript (`tampermonkey_autobuy.user.js`) for the auto-buy flow. The bot opens the product URL in the user's browser; the userscript handles add-to-cart and checkout steps. For Momox, the URL is routed via the homepage with `#autobuy` fragment to prevent redirect stripping of query params. BuyStep enum simplified to PENDING/COMPLETED/FAILED.
+**Rationale:** Playwright requires a Chromium install, complex async orchestration, and breaks against Momox's SES (Session Enforcement System) which fingerprints headless browsers. The userscript runs in the real browser session (with cookies, real TLS), so it's invisible to bot detection. `@grant GM_info` enforces sandbox isolation from the page's JS. `@run-at document-start` captures URL params before React's router rewrites them. Result: zero Chromium dependency, no bot detection surface, and the user stays in control of the final checkout confirmation.

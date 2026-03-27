@@ -1,9 +1,8 @@
 """Scan scheduler — continuous parallel loop scanning all ISBNs.
 
 Strategy: scan every ISBN at the same frequency in an infinite loop.
-Uses asyncio.Semaphore for parallel workers on the Medimops JSON API
-(~80ms/req, no Cloudflare). 3 workers × 0.3s delay = ~10 req/s peak.
-Full cycle ~3 min for 1380 ISBNs with 1 IP.
+Multi-platform: Momox (JSON API, fast) + RecycLivre (HTML, slower).
+Each platform has its own rate limits and worker concurrency.
 """
 
 import asyncio
@@ -19,6 +18,7 @@ from resell_bot.core import price_engine
 from resell_bot.core.notifier import Notifier
 from resell_bot.scrapers.base import BaseScraper
 from resell_bot.scrapers.momox_api import MomoxApiScraper
+from resell_bot.scrapers.recyclivre import RecyclivreScraper
 from resell_bot.utils.http_client import HttpClient
 
 logger = logging.getLogger(__name__)
@@ -43,6 +43,7 @@ class ScanScheduler:
         self.max_workers = scan_cfg.get("max_workers", 3)
 
         http_cfg = settings.get("http", {})
+        # Momox: fast JSON API, aggressive rate limits OK
         self.http_client = HttpClient(
             user_agents=http_cfg.get("user_agents"),
             timeout=http_cfg.get("timeout_seconds", 15),
@@ -51,18 +52,36 @@ class ScanScheduler:
             delay_max=self.delay_max,
         )
 
+        # RecycLivre: HTML scraping, slow rate (2-4s delay, 1 worker)
+        # ~0.3 req/s — conservative to avoid Cloudflare challenges
+        self.http_client_recyclivre = HttpClient(
+            user_agents=http_cfg.get("user_agents"),
+            timeout=http_cfg.get("timeout_seconds", 15),
+            max_retries=http_cfg.get("max_retries", 2),
+            delay_min=2.0,
+            delay_max=4.0,
+        )
+
         self.scrapers: list[BaseScraper] = [
             MomoxApiScraper(self.http_client),
+            RecyclivreScraper(self.http_client_recyclivre),
         ]
 
         self.cooldown_hours = settings.get("dedup", {}).get("cooldown_hours", 24)
         self.scheduler = AsyncIOScheduler()
         self._running = False
-        self._semaphore = asyncio.Semaphore(self.max_workers)
+        self._scan_task: asyncio.Task | None = None
+        self._auto_restart_task: asyncio.Task | None = None
+        self._loop: asyncio.AbstractEventLoop | None = None  # main event loop ref
+        # Per-platform concurrency limits
+        self._semaphores: dict[str, asyncio.Semaphore] = {
+            "momox_shop": asyncio.Semaphore(self.max_workers),
+            "recyclivre": asyncio.Semaphore(1),
+        }
         self._alert_lock = asyncio.Lock()
 
-        # Live scan status for dashboard
-        self.scan_status: dict = {
+        # Live scan status for dashboard — per-platform
+        _empty_status = {
             "running": False,
             "scanned_count": 0,
             "total_count": 0,
@@ -73,6 +92,12 @@ class ScanScheduler:
             "last_completed": None,
             "last_cycle_duration": None,
         }
+        self.scan_status: dict = {
+            "momox_shop": {**_empty_status},
+            "recyclivre": {**_empty_status},
+        }
+        # Convenience — overall running flag
+        self._global_running_flag = False
 
     async def _scan_single(
         self,
@@ -92,6 +117,8 @@ class ScanScheduler:
             changed = self.db.upsert_availability(
                 isbn, scraper.platform_name, True, listing.price,
             )
+            # Always save listing when available (for URL tracking in books page)
+            self.db.save_listing(listing)
             if changed:
                 logger.info("RESTOCK: %s now AVAILABLE on %s at %.2f€",
                             isbn, scraper.platform_name, listing.price)
@@ -101,11 +128,6 @@ class ScanScheduler:
 
         # Check deal
         alert = price_engine.evaluate(listing, max_buy_price)
-        if alert is None:
-            return None
-
-        # Save listing (dedup by URL)
-        self.db.save_listing(listing)
         return alert
 
     async def _process_alert(self, alert: Alert) -> None:
@@ -133,8 +155,9 @@ class ScanScheduler:
         scraper: BaseScraper,
         counters: dict,
     ) -> None:
-        """Scan one ISBN within a semaphore-controlled worker."""
-        async with self._semaphore:
+        """Scan one ISBN within a per-platform semaphore-controlled worker."""
+        sem = self._semaphores.get(scraper.platform_name, asyncio.Semaphore(2))
+        async with sem:
             if not self._running:
                 return
 
@@ -153,81 +176,109 @@ class ScanScheduler:
                     counters["available"] += 1
 
             counters["scanned"] += 1
-            self.scan_status["scanned_count"] = counters["scanned"]
-            self.scan_status["deals_found"] = counters["deals"]
-            self.scan_status["available_found"] = counters["available"]
+            pstatus = self.scan_status[scraper.platform_name]
+            pstatus["scanned_count"] = counters["scanned"]
+            pstatus["deals_found"] = counters["deals"]
+            pstatus["available_found"] = counters["available"]
 
-            # Rate limit per worker
-            delay = random.uniform(self.delay_min, self.delay_max)
+            # Rate limit per worker — use scraper's client delays
+            if hasattr(scraper, 'client') and hasattr(scraper.client, 'delay_min'):
+                delay = random.uniform(scraper.client.delay_min, scraper.client.delay_max)
+            else:
+                delay = random.uniform(self.delay_min, self.delay_max)
             await asyncio.sleep(delay)
 
-    async def run_continuous(self) -> None:
-        """Main loop: scan all ISBNs with parallel workers, forever.
+    async def _platform_loop(self, scraper: BaseScraper) -> None:
+        """Independent scan loop for one platform. Runs forever until stopped."""
+        pname = scraper.platform_name
+        pstatus = self.scan_status[pname]
 
-        Uses asyncio.Semaphore to limit concurrent requests.
-        3 workers × 0.3s delay on Medimops JSON API = ~10 req/s peak.
-        Randomize order each cycle to avoid detectable patterns.
+        while self._running:
+            # Build full ISBN list each cycle (picks up DB changes)
+            refs = self.db.get_all_reference_isbns()
+            isbn_list = [
+                (r["isbn"], r["max_buy_price"])
+                for r in refs
+                if r.get("max_buy_price") is not None
+            ]
+
+            random.shuffle(isbn_list)
+
+            total = len(isbn_list)
+            cycle_start = datetime.now()
+            pstatus.update({
+                "running": True,
+                "scanned_count": 0,
+                "total_count": total,
+                "deals_found": 0,
+                "available_found": 0,
+                "cycle_start": cycle_start.isoformat(),
+            })
+
+            logger.info(
+                "[%s] Cycle %d: scanning %d ISBNs",
+                pname, pstatus["cycle_count"] + 1, total,
+            )
+
+            counters = {"scanned": 0, "deals": 0, "available": 0}
+
+            # Launch all workers — per-platform semaphore limits concurrency
+            tasks = [
+                asyncio.create_task(
+                    self._scan_worker(isbn, max_price, scraper, counters)
+                )
+                for isbn, max_price in isbn_list
+            ]
+            await asyncio.gather(*tasks, return_exceptions=True)
+
+            # Cycle complete
+            cycle_end = datetime.now()
+            duration = (cycle_end - cycle_start).total_seconds()
+            pstatus.update({
+                "running": False,
+                "cycle_count": pstatus["cycle_count"] + 1,
+                "last_completed": cycle_end.isoformat(),
+                "last_cycle_duration": duration,
+            })
+
+            logger.info(
+                "[%s] Cycle %d complete: %d ISBNs in %.0fs (%.1f min), %d available, %d deals",
+                pname, pstatus["cycle_count"], total, duration, duration / 60,
+                counters["available"], counters["deals"],
+            )
+
+            # Auto-expire unavailable alerts older than 3h (once per full round)
+            if pname == "momox_shop":
+                self.db.expire_unavailable_alerts(hours=2)
+
+        pstatus["running"] = False
+
+    async def run_continuous(self) -> None:
+        """Launch all platform scan loops in parallel.
+
+        Each platform runs independently with its own concurrency and rate limits.
+        Momox (~3 min/cycle) is NOT blocked by RecycLivre (~17 min/cycle).
         """
         self._running = True
         logger.info(
-            "Starting continuous scan loop (%d parallel workers, %.1f-%.1fs delay)",
-            self.max_workers, self.delay_min, self.delay_max,
+            "Starting parallel scan: %s",
+            ", ".join(f"{s.platform_name}" for s in self.scrapers),
         )
 
-        while self._running:
-            for scraper in self.scrapers:
-                # Build full ISBN list each cycle (picks up DB changes)
-                refs = self.db.get_all_reference_isbns()
-                isbn_list = [
-                    (r["isbn"], r["max_buy_price"])
-                    for r in refs
-                    if r.get("max_buy_price") is not None
-                ]
-
-                random.shuffle(isbn_list)
-
-                total = len(isbn_list)
-                cycle_start = datetime.now()
-                self.scan_status.update({
-                    "running": True,
-                    "scanned_count": 0,
-                    "total_count": total,
-                    "deals_found": 0,
-                    "available_found": 0,
-                    "cycle_start": cycle_start.isoformat(),
-                })
-
-                logger.info(
-                    "Cycle %d: scanning %d ISBNs on %s (%d workers)",
-                    self.scan_status["cycle_count"] + 1, total,
-                    scraper.platform_name, self.max_workers,
-                )
-
-                counters = {"scanned": 0, "deals": 0, "available": 0}
-
-                # Launch all workers — semaphore limits concurrency
-                tasks = [
-                    asyncio.create_task(
-                        self._scan_worker(isbn, max_price, scraper, counters)
-                    )
-                    for isbn, max_price in isbn_list
-                ]
-                await asyncio.gather(*tasks, return_exceptions=True)
-
-                # Cycle complete
-                cycle_end = datetime.now()
-                duration = (cycle_end - cycle_start).total_seconds()
-                self.scan_status.update({
-                    "cycle_count": self.scan_status["cycle_count"] + 1,
-                    "last_completed": cycle_end.isoformat(),
-                    "last_cycle_duration": duration,
-                })
-
-                logger.info(
-                    "Cycle %d complete: %d ISBNs in %.0fs (%.1f min), %d available, %d deals",
-                    self.scan_status["cycle_count"], total, duration, duration / 60,
-                    counters["available"], counters["deals"],
-                )
+        try:
+            # One task per platform — fully independent
+            platform_tasks = [
+                asyncio.create_task(self._platform_loop(scraper))
+                for scraper in self.scrapers
+            ]
+            await asyncio.gather(*platform_tasks, return_exceptions=True)
+        except asyncio.CancelledError:
+            logger.info("Scan loop cancelled")
+        finally:
+            self._running = False
+            for ps in self.scan_status.values():
+                ps["running"] = False
+            logger.info("Scan loop stopped")
 
     async def run_once(self) -> None:
         """Run a single full scan (for --once mode) with parallel workers."""
@@ -257,6 +308,76 @@ class ScanScheduler:
                 "Full scan complete: %d ISBNs, %d available, %d deals",
                 len(isbn_list), counters["available"], counters["deals"],
             )
+
+    def _get_loop(self) -> asyncio.AbstractEventLoop:
+        """Get the main event loop (may be called from another thread)."""
+        if self._loop is not None:
+            return self._loop
+        return asyncio.get_running_loop()
+
+    def start_scan(self) -> None:
+        """Start the continuous scan loop as a background task.
+
+        Thread-safe: can be called from the web thread (uvicorn) or main thread.
+        """
+        if self._scan_task and not self._scan_task.done():
+            return  # Already running
+        # Cancel any pending auto-restart
+        if self._auto_restart_task and not self._auto_restart_task.done():
+            self._auto_restart_task.cancel()
+            self._auto_restart_task = None
+
+        loop = self._get_loop()
+
+        def _create_task() -> None:
+            self._scan_task = loop.create_task(self.run_continuous())
+            logger.info("Scan task started")
+
+        if loop.is_running() and loop != getattr(asyncio, '_running_loop', None):
+            loop.call_soon_threadsafe(_create_task)
+        else:
+            _create_task()
+
+    def stop_scan(self, auto_restart_hours: float = 1.0) -> None:
+        """Stop the scan loop. Auto-restarts after auto_restart_hours.
+
+        Pass auto_restart_hours=0 to disable auto-restart (buyer handles restart).
+        Thread-safe: can be called from the web thread (uvicorn) or main thread.
+        """
+        self._running = False
+        for ps in self.scan_status.values():
+            ps["running"] = False
+        if self._scan_task and not self._scan_task.done():
+            self._scan_task.cancel()
+        self._scan_task = None
+
+        # Skip auto-restart when explicitly 0 (buyer will restart manually)
+        if auto_restart_hours <= 0:
+            logger.info("Scan stopped — no auto-restart (buyer mode)")
+            return
+
+        logger.info("Scan stopped — auto-restart in %.0f min", auto_restart_hours * 60)
+
+        loop = self._get_loop()
+
+        def _schedule_restart() -> None:
+            self._auto_restart_task = loop.create_task(
+                self._auto_restart(auto_restart_hours)
+            )
+
+        if loop.is_running() and loop != getattr(asyncio, '_running_loop', None):
+            loop.call_soon_threadsafe(_schedule_restart)
+        else:
+            _schedule_restart()
+
+    async def _auto_restart(self, hours: float) -> None:
+        """Wait then auto-restart the scan loop."""
+        try:
+            await asyncio.sleep(hours * 3600)
+            logger.info("Auto-restarting scan after %.0f min pause", hours * 60)
+            self.start_scan()
+        except asyncio.CancelledError:
+            pass  # Cancelled because user manually restarted
 
     async def send_daily_digest(self) -> None:
         """Send daily recap of active deals to Discord only."""
@@ -297,4 +418,5 @@ class ScanScheduler:
         self.scan_status["running"] = False
         self.scheduler.shutdown(wait=False)
         await self.http_client.close()
+        await self.http_client_recyclivre.close()
         self.db.close()

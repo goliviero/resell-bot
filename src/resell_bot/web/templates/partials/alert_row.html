@@ -21,20 +21,29 @@
         <br><span class="badge" style="background: rgba(239,68,68,0.15); color: var(--red); font-size: 0.65rem;">Indisponible</span>
         {% endif %}
     </td>
-    <td>{{ "%.2f"|format(alert.buy_price) }}&euro; <small style="color:var(--muted);">{{ alert.platform }}</small></td>
+    {% set platform_label = {"momox_shop": "Momox", "recyclivre": "RecycLivre"}.get(alert.platform, alert.platform) %}
+    <td>{{ "%.2f"|format(alert.buy_price) }}&euro; <small style="color:var(--muted);">{{ platform_label }}</small></td>
     <td>{{ "%.2f"|format(alert.max_buy_price) }}&euro;</td>
     <td>
         <span class="margin-positive">
             {{ "%+.2f"|format(alert.savings) }}&euro;
         </span>
     </td>
+    <td style="font-size: 0.8rem; color: var(--muted);">{{ alert.condition or "—" }}</td>
+    <td>
+        <a href="{{ alert.url }}" target="_blank" style="display: inline-block; text-decoration: none; padding: 0.3rem 0.6rem; border: 1px solid var(--green); border-radius: 6px; text-align: center;">
+            <span style="font-size: 0.8rem; font-weight: 600; color: var(--green);">{{ platform_label }}</span>
+            <br><span style="font-size: 0.6rem; color: var(--muted);">lien direct</span>
+        </a>
+    </td>
     <td><span class="badge badge-{{ alert.status }}">{{ alert.status }}</span></td>
     <td><small style="color:var(--muted);">{{ alert.notified_at[:16] }}</small></td>
     <td>
         <div class="actions">
             {% if is_available %}
-            <a href="{{ alert.url }}" target="_blank" class="btn btn-sm" title="Voir sur Momox" style="text-decoration:none;">Voir sur Momox</a>
-            <a href="{{ alert.url }}" target="_blank" class="btn btn-buy btn-sm" style="text-decoration:none;" title="Acheter sur Momox">ACHETER</a>
+            <form method="post" action="/buy/{{ alert.id }}" style="display:inline;">
+                <button type="submit" class="btn btn-buy btn-sm" title="Achat rapide (ouvre navigateur)">ACHETER</button>
+            </form>
             {% else %}
             <span style="font-size: 0.75rem; color: var(--red);">Plus en stock</span>
             {% endif %}

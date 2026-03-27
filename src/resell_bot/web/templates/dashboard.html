@@ -2,19 +2,14 @@
 {% block title %}Dashboard{% endblock %}
 {% block content %}
 
-<!-- Scan status — auto-refresh every 5s -->
-<div id="scan-panel" hx-get="/scan-status" hx-trigger="every 5s" hx-swap="innerHTML">
-    {% include "partials/scan_status.html" %}
+<!-- New alerts banner — auto-updates when bell detects new alerts -->
+<div id="new-alerts-panel" hx-get="/dashboard/new-alerts" hx-trigger="refreshDashboard from:body" hx-swap="innerHTML">
+    {% include "partials/new_alerts_banner.html" %}
 </div>
 
 <!-- Stats — refreshes when bell detects new alerts -->
 <div id="stats-bar" hx-get="/stats" hx-trigger="refreshDashboard from:body" hx-swap="innerHTML">
     {% include "partials/stats.html" %}
-</div>
-
-<!-- New alerts banner — auto-updates when bell detects new alerts -->
-<div id="new-alerts-panel" hx-get="/dashboard/new-alerts" hx-trigger="refreshDashboard from:body" hx-swap="innerHTML">
-    {% include "partials/new_alerts_banner.html" %}
 </div>
 
 <!-- Filters -->
@@ -36,6 +31,8 @@
             <th>Prix</th>
             <th>Budget</th>
             <th>Economie</th>
+            <th>Etat</th>
+            <th>Vendeur</th>
             <th>Statut</th>
             <th>Date</th>
             <th>Actions</th>
@@ -63,5 +60,10 @@
     <p style="margin-top: 0.5rem; font-size: 0.85rem;">Les alertes apparaitront ici quand le bot detectera des bonnes affaires.</p>
 </div>
 {% endif %}
+
+<!-- Scan status — bottom of page, auto-refresh every 5s -->
+<div id="scan-panel" style="margin-top: 2rem;" hx-get="/scan-status" hx-trigger="every 5s" hx-swap="innerHTML">
+    {% include "partials/scan_status.html" %}
+</div>
 
 {% endblock %}

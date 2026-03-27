@@ -99,17 +99,22 @@ def main() -> None:
     start_dashboard(db, scheduler)
     logger.info("Starting Resell Bot in continuous mode")
 
-    async def _run_continuous() -> None:
+    async def _run_forever() -> None:
+        scheduler._loop = asyncio.get_running_loop()
         scheduler.start()
+        # Start scan as a background task so stopping it doesn't kill the process
+        scheduler.start_scan()
+        # Keep the event loop alive — dashboard + auto-restart need it
         try:
-            await scheduler.run_continuous()
+            while True:
+                await asyncio.sleep(60)
         except asyncio.CancelledError:
             pass
         finally:
             await scheduler.shutdown()
 
     try:
-        asyncio.run(_run_continuous())
+        asyncio.run(_run_forever())
     except KeyboardInterrupt:
         logger.info("Shutting down...")
 

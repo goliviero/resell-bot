@@ -10,7 +10,7 @@
     </div>
     <div class="stat-card stat-new">
         <div class="number">{{ scan.available }}</div>
-        <div class="label">Dispos Momox</div>
+        <div class="label">Disponibles</div>
     </div>
     <div class="stat-card">
         <div class="number" style="color: var(--red);">{{ scan.unavailable }}</div>
@@ -75,14 +75,21 @@
     <tbody>
         {% for book in books %}
         <tr{% if book.momox_price is not none and book.max_buy_price is not none and book.momox_price <= book.max_buy_price %} style="background: rgba(34,197,94,0.08);"{% endif %}>
-            <!-- Availability indicator -->
-            <td style="text-align: center; font-size: 1.1rem;">
+            <!-- Availability indicator — per platform -->
+            <td style="text-align: center; font-size: 0.8rem; white-space: nowrap;">
                 {% if book.momox_status == 'available' %}
-                <span title="Disponible sur Momox" style="color: var(--green);">&#10003;</span>
+                <span title="Momox: dispo" style="color: var(--green);">M&#10003;</span>
                 {% elif book.momox_status == 'unavailable' %}
-                <span title="Indisponible" style="color: var(--red);">&#10007;</span>
+                <span title="Momox: indispo" style="color: var(--red);">M&#10007;</span>
                 {% else %}
-                <span title="Pas encore scanne" style="color: var(--muted);">&#8212;</span>
+                <span title="Momox: non scanne" style="color: var(--muted);">M—</span>
+                {% endif %}
+                {% if book.recyclivre_status == 'available' %}
+                <span title="RecycLivre: dispo" style="color: var(--green); margin-left: 0.3rem;">R&#10003;</span>
+                {% elif book.recyclivre_status == 'unavailable' %}
+                <span title="RecycLivre: indispo" style="color: var(--red); margin-left: 0.3rem;">R&#10007;</span>
+                {% else %}
+                <span title="RecycLivre: non scanne" style="color: var(--muted); margin-left: 0.3rem;">R—</span>
                 {% endif %}
             </td>
             <td>
@@ -127,14 +134,22 @@
                 {% endif %}
             </td>
             <td class="actions">
-                {% set search_link = "https://www.momox-shop.fr/angebote?searchparam=" ~ book.isbn %}
-                {% set momox_link = book.momox_url if book.momox_url else search_link %}
-                {% if book.momox_status == 'available' and book.momox_price is not none %}
-                <a href="{{ momox_link }}" target="_blank" class="btn btn-buy btn-sm" style="text-decoration:none;">Acheter</a>
+                {% set momox_search = "https://www.momox-shop.fr/angebote?searchparam=" ~ book.isbn %}
+                {% set recyclivre_search = "https://www.recyclivre.com/search?q=" ~ book.isbn %}
+                {% set momox_link = book.momox_url if book.momox_url else momox_search %}
+                {% set recyclivre_link = book.recyclivre_url if book.recyclivre_url else recyclivre_search %}
+                {% if book.momox_status == 'available' %}
+                <a href="{{ momox_link }}" target="_blank" class="btn btn-sm" style="text-decoration:none; font-size:0.7rem; background: rgba(34,197,94,0.15); border-color: var(--green); color: var(--green);">Momox {{ "%.2f"|format(book.momox_price) }}&euro;</a>
+                {% else %}
+                <a href="{{ momox_search }}" target="_blank" class="btn btn-sm" style="text-decoration:none; font-size:0.7rem; opacity: 0.35;">Momox</a>
                 {% endif %}
-                <a href="{{ search_link }}" target="_blank" class="btn btn-sm" style="text-decoration:none;">Momox</a>
+                {% if book.recyclivre_status == 'available' %}
+                <a href="{{ recyclivre_link }}" target="_blank" class="btn btn-sm" style="text-decoration:none; font-size:0.7rem; background: rgba(34,197,94,0.15); border-color: var(--green); color: var(--green);">RecycLivre {{ "%.2f"|format(book.recyclivre_price) }}&euro;</a>
+                {% else %}
+                <a href="{{ recyclivre_search }}" target="_blank" class="btn btn-sm" style="text-decoration:none; font-size:0.7rem; opacity: 0.35;">RecycLivre</a>
+                {% endif %}
                 {% if book.cal_url %}
-                <a href="{{ book.cal_url }}" target="_blank" class="btn btn-sm" style="text-decoration:none;">CaL</a>
+                <a href="{{ book.cal_url }}" target="_blank" class="btn btn-sm" style="text-decoration:none; font-size:0.7rem;">CaL</a>
                 {% endif %}
             </td>
         </tr>

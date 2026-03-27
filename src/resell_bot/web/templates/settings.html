@@ -44,7 +44,18 @@
             <tbody>
             {% for wh in discord_webhooks %}
                 <tr>
-                    <td>{{ wh.name }}</td>
+                    <td>
+                        <span id="discord-name-{{ wh.id }}-display">
+                            {{ wh.name }}
+                            <button type="button" class="btn btn-sm" style="padding:0.1rem 0.3rem; font-size:0.7rem; opacity:0.5;"
+                                    onclick="document.getElementById('discord-name-{{ wh.id }}-display').style.display='none'; document.getElementById('discord-name-{{ wh.id }}-edit').style.display='inline-flex';">&#9998;</button>
+                        </span>
+                        <form method="post" action="/settings/discord/{{ wh.id }}/rename" id="discord-name-{{ wh.id }}-edit"
+                              style="display:none; align-items:center; gap:0.3rem;">
+                            <input type="text" name="name" value="{{ wh.name }}" class="form-input" style="padding:0.2rem 0.4rem; font-size:0.8rem; width:120px;">
+                            <button type="submit" class="btn btn-sm" style="padding:0.15rem 0.4rem; font-size:0.7rem;">OK</button>
+                        </form>
+                    </td>
                     <td style="font-size: 0.75rem; color: var(--muted); max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
                         {{ wh.url[:60] }}...
                     </td>
@@ -101,34 +112,50 @@
         </details>
     </div>
 
-    <!-- ── Email Configs ──────────────────────────────────── -->
+    <!-- ── Email Subscribers ──────────────────────────────── -->
     <div class="settings-section">
         <div class="settings-header">
             <h3>Email</h3>
-            <span class="badge {% if email_configs %}badge-new{% else %}badge-ignored{% endif %}">
-                {{ email_configs|length }} actif{{ 's' if email_configs|length > 1 else '' }}
+            <span class="badge {% if email_subscribers %}badge-new{% else %}badge-ignored{% endif %}">
+                {{ email_subscribers|length }} abonne{{ 's' if email_subscribers|length > 1 else '' }}
             </span>
         </div>
 
-        {% if email_configs %}
+        {% if not smtp_configured %}
+        <p style="color: var(--orange); font-size: 0.85rem; margin-bottom: 0.75rem;">
+            Serveur SMTP non configure — les emails ne seront pas envoyes.
+            <a href="/admin" style="color: var(--accent);">Configurer dans Admin</a>
+        </p>
+        {% endif %}
+
+        {% if email_subscribers %}
         <table class="alert-table" style="margin-bottom: 1rem;">
             <thead>
                 <tr>
-                    <th>Label</th>
-                    <th>Destinataire</th>
-                    <th>SMTP</th>
+                    <th>Nom</th>
+                    <th>Email</th>
                     <th>Status</th>
                     <th>Actions</th>
                 </tr>
             </thead>
             <tbody>
-            {% for ec in email_configs %}
+            {% for sub in email_subscribers %}
                 <tr>
-                    <td>{{ ec.label }}</td>
-                    <td style="font-size: 0.85rem;">{{ ec.email_to }}</td>
-                    <td style="font-size: 0.75rem; color: var(--muted);">{{ ec.smtp_host }}:{{ ec.smtp_port }}</td>
                     <td>
-                        {% if ec.enabled %}
+                        <span id="email-name-{{ sub.id }}-display">
+                            {{ sub.label }}
+                            <button type="button" class="btn btn-sm" style="padding:0.1rem 0.3rem; font-size:0.7rem; opacity:0.5;"
+                                    onclick="document.getElementById('email-name-{{ sub.id }}-display').style.display='none'; document.getElementById('email-name-{{ sub.id }}-edit').style.display='inline-flex';">&#9998;</button>
+                        </span>
+                        <form method="post" action="/settings/email/{{ sub.id }}/rename" id="email-name-{{ sub.id }}-edit"
+                              style="display:none; align-items:center; gap:0.3rem;">
+                            <input type="text" name="label" value="{{ sub.label }}" class="form-input" style="padding:0.2rem 0.4rem; font-size:0.8rem; width:120px;">
+                            <button type="submit" class="btn btn-sm" style="padding:0.15rem 0.4rem; font-size:0.7rem;">OK</button>
+                        </form>
+                    </td>
+                    <td style="font-size: 0.85rem;">{{ sub.email }}</td>
+                    <td>
+                        {% if sub.enabled %}
                         <span class="badge badge-new">Actif</span>
                         {% else %}
                         <span class="badge badge-ignored">Inactif</span>
@@ -137,20 +164,20 @@
                     <td>
                         <div class="actions">
                             <button class="btn btn-sm"
-                                    hx-post="/settings/email/{{ ec.id }}/test"
-                                    hx-target="#email-test-{{ ec.id }}"
+                                    hx-post="/settings/email/{{ sub.id }}/test"
+                                    hx-target="#email-test-{{ sub.id }}"
                                     hx-swap="innerHTML">Tester</button>
-                            <form method="post" action="/settings/email/{{ ec.id }}/toggle" style="display:inline;">
+                            <form method="post" action="/settings/email/{{ sub.id }}/toggle" style="display:inline;">
                                 <button type="submit" class="btn btn-sm">
-                                    {{ 'Desactiver' if ec.enabled else 'Activer' }}
+                                    {{ 'Desactiver' if sub.enabled else 'Activer' }}
                                 </button>
                             </form>
-                            <form method="post" action="/settings/email/{{ ec.id }}/delete" style="display:inline;"
-                                  onsubmit="return confirm('Supprimer cette config email ?')">
+                            <form method="post" action="/settings/email/{{ sub.id }}/delete" style="display:inline;"
+                                  onsubmit="return confirm('Supprimer cet abonne ?')">
                                 <button type="submit" class="btn btn-sm" style="color: var(--red);">Supprimer</button>
                             </form>
                         </div>
-                        <span id="email-test-{{ ec.id }}" style="font-size: 0.75rem; margin-top: 0.3rem; display: block;"></span>
+                        <span id="email-test-{{ sub.id }}" style="font-size: 0.75rem; margin-top: 0.3rem; display: block;"></span>
                     </td>
                 </tr>
             {% endfor %}
@@ -158,44 +185,24 @@
         </table>
         {% else %}
         <p style="color: var(--muted); font-size: 0.85rem; margin-bottom: 1rem;">
-            Aucune config email configuree.
+            Aucun abonne email. Ajoutez votre email pour recevoir les alertes.
         </p>
         {% endif %}
 
         <details style="margin-top: 0.5rem;">
-            <summary style="cursor: pointer; color: var(--accent); font-size: 0.85rem;">+ Ajouter un email</summary>
-            <form method="post" action="/settings/email/add" style="margin-top: 0.75rem;">
-                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem;">
+            <summary style="cursor: pointer; color: var(--accent); font-size: 0.85rem;">+ S'abonner aux alertes email</summary>
+            <form method="post" action="/settings/email/subscribe" style="margin-top: 0.75rem;">
+                <div style="display: grid; grid-template-columns: 1fr 2fr; gap: 0.75rem;">
                     <div class="form-group">
-                        <label>Label (ex: Gmail perso)</label>
-                        <input type="text" name="label" required placeholder="Mon email" class="form-input">
+                        <label>Nom</label>
+                        <input type="text" name="label" required placeholder="Guillaume" class="form-input">
                     </div>
                     <div class="form-group">
-                        <label>Email destinataire</label>
-                        <input type="email" name="email_to" required placeholder="ton.email@example.com" class="form-input">
-                    </div>
-                </div>
-                <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 0.75rem;">
-                    <div class="form-group">
-                        <label>Serveur SMTP</label>
-                        <input type="text" name="smtp_host" required placeholder="smtp.gmail.com" class="form-input">
-                    </div>
-                    <div class="form-group">
-                        <label>Port</label>
-                        <input type="number" name="smtp_port" value="587" required class="form-input">
+                        <label>Email</label>
+                        <input type="email" name="email" required placeholder="ton.email@example.com" class="form-input">
                     </div>
                 </div>
-                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem;">
-                    <div class="form-group">
-                        <label>Utilisateur SMTP</label>
-                        <input type="text" name="smtp_user" required placeholder="ton.email@gmail.com" class="form-input">
-                    </div>
-                    <div class="form-group">
-                        <label>Mot de passe SMTP</label>
-                        <input type="password" name="smtp_password" required placeholder="mot de passe d'application" class="form-input">
-                    </div>
-                </div>
-                <button type="submit" class="btn" style="margin-top: 0.5rem;">Ajouter</button>
+                <button type="submit" class="btn" style="margin-top: 0.5rem;">S'abonner</button>
             </form>
         </details>
     </div>
@@ -204,9 +211,83 @@
     <div style="margin-top: 1rem; padding: 1rem; background: var(--bg); border-radius: 8px; font-size: 0.85rem;">
         <strong>Comportement des notifications:</strong>
         <ul style="margin-top: 0.5rem; padding-left: 1.5rem; color: var(--muted);">
-            <li><strong>Alerte instantanee</strong> — envoyee a TOUS les webhooks/emails actifs des qu'un deal est detecte. Cooldown 24h par livre.</li>
-            <li><strong>Recap journalier</strong> — 1 message a 08:00 a tous les canaux actifs avec tous les deals disponibles.</li>
+            <li><strong>Alerte instantanee</strong> — 1 Discord + 1 email par abonne des qu'un deal est detecte. Cooldown 24h par livre.</li>
+            <li><strong>Recap journalier</strong> — 1 message Discord a 08:00 avec les deals en cours (pas d'email recap).</li>
+            <li><strong>Config SMTP</strong> — le serveur d'envoi se configure dans <a href="/admin" style="color: var(--accent);">Admin</a>. Ici on gere juste qui recoit.</li>
         </ul>
+    </div>
+
+    <!-- ── Notification Log ─────────────────────────────────── -->
+    <div class="settings-section" style="margin-top: 1rem;">
+        <div class="settings-header">
+            <h3>Historique des notifications</h3>
+            <span class="badge badge-seen">{{ notif_log_total }} total</span>
+        </div>
+
+        {% if notif_log %}
+        <table class="alert-table" style="font-size: 0.82rem;">
+            <thead>
+                <tr>
+                    <th>Date</th>
+                    <th>Canal</th>
+                    <th>Livre</th>
+                    <th>ISBN</th>
+                    <th>Prix</th>
+                    <th>Economie</th>
+                    <th>Status</th>
+                </tr>
+            </thead>
+            <tbody>
+            {% for entry in notif_log %}
+                <tr>
+                    <td style="white-space: nowrap; font-size: 0.75rem; color: var(--muted);">{{ entry.sent_at[:16] }}</td>
+                    <td>
+                        {% if entry.channel == 'discord' %}
+                        <span style="color: #5865F2;">Discord</span>
+                        {% elif entry.channel == 'email' %}
+                        <span style="color: var(--orange);">Email</span>
+                        {% else %}
+                        {{ entry.channel }}
+                        {% endif %}
+                        <small style="color: var(--muted);">({{ entry.channel_name }})</small>
+                    </td>
+                    <td>{{ (entry.title or '—')[:40] }}{% if entry.title and entry.title|length > 40 %}...{% endif %}</td>
+                    <td style="font-family: monospace; font-size: 0.75rem;">{{ entry.isbn or '—' }}</td>
+                    <td>{% if entry.price %}{{ "%.2f"|format(entry.price) }}&euro;{% else %}—{% endif %}</td>
+                    <td>
+                        {% if entry.savings %}
+                        <span class="margin-positive">+{{ "%.2f"|format(entry.savings) }}&euro;</span>
+                        {% else %}—{% endif %}
+                    </td>
+                    <td>
+                        {% if entry.success %}
+                        <span style="color: var(--green);">&#10003;</span>
+                        {% else %}
+                        <span style="color: var(--red);" title="{{ entry.error or '' }}">&#10007;</span>
+                        {% endif %}
+                    </td>
+                </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+
+        <!-- Pagination -->
+        <div class="pagination" style="margin-top: 0.75rem;">
+            {% if log_page > 1 %}
+            <a href="/settings?log_page={{ log_page - 1 }}" class="btn btn-sm">&laquo; Precedent</a>
+            {% endif %}
+            <span style="color: var(--muted); font-size: 0.8rem; padding: 0.2rem 0.5rem;">
+                Page {{ log_page }} / {{ ((notif_log_total - 1) // log_per_page + 1) if notif_log_total > 0 else 1 }}
+            </span>
+            {% if notif_log|length == log_per_page %}
+            <a href="/settings?log_page={{ log_page + 1 }}" class="btn btn-sm">Suivant &raquo;</a>
+            {% endif %}
+        </div>
+        {% else %}
+        <p style="color: var(--muted); font-size: 0.85rem;">
+            Aucune notification envoyee pour le moment. L'historique apparaitra ici a chaque alerte detectee.
+        </p>
+        {% endif %}
     </div>
 </div>
 

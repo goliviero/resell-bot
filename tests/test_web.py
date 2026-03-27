@@ -70,7 +70,7 @@ class TestDashboard:
         resp = await client.get("/")
         assert resp.status_code == 200
         assert "Fondation" in resp.text
-        assert "momox_shop" in resp.text
+        assert "Momox" in resp.text
 
     @pytest.mark.asyncio
     async def test_dashboard_filter_by_status(self, client, seeded_db):

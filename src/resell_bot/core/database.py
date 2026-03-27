@@ -96,6 +96,24 @@ CREATE TABLE IF NOT EXISTS notification_log (
     sent_at TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS smtp_config (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    smtp_host TEXT NOT NULL,
+    smtp_port INTEGER NOT NULL DEFAULT 587,
+    smtp_user TEXT NOT NULL,
+    smtp_password TEXT NOT NULL,
+    smtp_use_tls INTEGER NOT NULL DEFAULT 1,
+    updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS email_subscribers (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    label TEXT NOT NULL,
+    email TEXT NOT NULL UNIQUE,
+    enabled INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL
+);
+
 CREATE INDEX IF NOT EXISTS idx_listings_isbn ON listings(isbn);
 CREATE INDEX IF NOT EXISTS idx_listings_url ON listings(url);
 CREATE INDEX IF NOT EXISTS idx_alerts_listing_url ON alerts(listing_url);
@@ -123,8 +141,11 @@ class Database:
 
     def __init__(self, db_path: Path) -> None:
         db_path.parent.mkdir(parents=True, exist_ok=True)
-        self.conn = sqlite3.connect(str(db_path), check_same_thread=False)
+        self.conn = sqlite3.connect(str(db_path), check_same_thread=False, timeout=10)
         self.conn.row_factory = sqlite3.Row
+        # WAL mode allows concurrent reads + writes (no "database is locked")
+        self.conn.execute("PRAGMA journal_mode=WAL")
+        self.conn.execute("PRAGMA busy_timeout=5000")
         self._init_schema()
         self._run_migrations()
 
@@ -446,24 +467,33 @@ class Database:
         offset: int = 0,
         availability_filter: str | None = None,
     ) -> list[dict]:
-        """Get all watchlist books with Momox availability and prices.
+        """Get all watchlist books with per-platform availability and prices.
 
-        Joins reference_prices with isbn_availability for real-time status,
-        and with listings for deal info.
+        Joins reference_prices with isbn_availability for Momox + RecycLivre,
+        and with listings for direct URLs.
         """
         query = """
             SELECT rp.isbn, rp.title, rp.author, rp.max_buy_price, rp.url AS cal_url,
                    ia.status AS momox_status, ia.last_price AS momox_price,
                    ia.last_checked_at, ia.priority, ia.times_available,
-                   ml.url AS momox_url, ml.condition, ml.found_at
+                   ml.url AS momox_url, ml.condition, ml.found_at,
+                   rl.status AS recyclivre_status, rl.last_price AS recyclivre_price,
+                   rll.url AS recyclivre_url
             FROM reference_prices rp
             LEFT JOIN isbn_availability ia ON rp.isbn = ia.isbn AND ia.platform = 'momox_shop'
+            LEFT JOIN isbn_availability rl ON rp.isbn = rl.isbn AND rl.platform = 'recyclivre'
             LEFT JOIN (
                 SELECT isbn, url, condition, found_at,
                        ROW_NUMBER() OVER (PARTITION BY isbn ORDER BY price ASC) AS rn
                 FROM listings
                 WHERE platform = 'momox_shop'
             ) ml ON rp.isbn = ml.isbn AND ml.rn = 1
+            LEFT JOIN (
+                SELECT isbn, url,
+                       ROW_NUMBER() OVER (PARTITION BY isbn ORDER BY price ASC) AS rn
+                FROM listings
+                WHERE platform = 'recyclivre'
+            ) rll ON rp.isbn = rll.isbn AND rll.rn = 1
         """
         conditions: list[str] = []
         params: list = []
@@ -514,7 +544,7 @@ class Database:
         return row["cnt"]
 
     def get_scan_overview(self, platform: str = "momox_shop") -> dict:
-        """Get scan overview: total checked, available, last scan time per tier."""
+        """Get scan overview per platform: deals, available, unavailable, unchecked."""
         row = self.conn.execute(
             """SELECT COUNT(*) AS total_checked,
                       SUM(CASE WHEN status = 'available' THEN 1 ELSE 0 END) AS available,
@@ -525,21 +555,17 @@ class Database:
         ).fetchone()
         total_watchlist = self.conn.execute("SELECT COUNT(*) AS cnt FROM reference_prices").fetchone()["cnt"]
 
-        tiers = self.conn.execute(
-            """SELECT priority, COUNT(*) AS cnt,
-                      MIN(last_checked_at) AS oldest_check,
-                      MAX(last_checked_at) AS newest_check
-               FROM isbn_availability WHERE platform = ?
-               GROUP BY priority""",
+        # Deals = available AND price within buy budget
+        deals = self.conn.execute(
+            """SELECT COUNT(*) AS cnt
+               FROM isbn_availability ia
+               JOIN reference_prices rp ON ia.isbn = rp.isbn
+               WHERE ia.platform = ? AND ia.status = 'available'
+                     AND ia.last_price IS NOT NULL
+                     AND ia.last_price <= rp.max_buy_price""",
             (platform,),
-        ).fetchall()
-        tier_info = {}
-        for t in tiers:
-            tier_info[t["priority"]] = {
-                "count": t["cnt"],
-                "oldest_check": t["oldest_check"],
-                "newest_check": t["newest_check"],
-            }
+        ).fetchone()["cnt"]
+
         unchecked = self.conn.execute(
             """SELECT COUNT(*) AS cnt FROM reference_prices rp
                LEFT JOIN isbn_availability ia ON rp.isbn = ia.isbn AND ia.platform = ?
@@ -547,14 +573,17 @@ class Database:
             (platform,),
         ).fetchone()["cnt"]
 
+        available_total = row["available"] or 0
+
         return {
             "total_watchlist": total_watchlist,
             "total_checked": row["total_checked"] or 0,
-            "available": row["available"] or 0,
+            "deals": deals,
+            "available_no_deal": available_total - deals,
+            "available": available_total,
             "unavailable": row["unavailable"] or 0,
             "unchecked": unchecked,
             "last_scan_at": row["last_scan_at"],
-            "tiers": tier_info,
         }
 
     # ── Notification Settings ──────────────────────────────────
@@ -640,6 +669,14 @@ class Database:
         self.conn.commit()
         return cursor.rowcount > 0
 
+    def rename_discord_webhook(self, webhook_id: int, name: str) -> bool:
+        """Rename a Discord webhook."""
+        cursor = self.conn.execute(
+            "UPDATE discord_webhooks SET name = ? WHERE id = ?", (name, webhook_id),
+        )
+        self.conn.commit()
+        return cursor.rowcount > 0
+
     # ── Email Configs ────────────────────────────────────────
 
     def add_email_config(
@@ -682,6 +719,102 @@ class Database:
         )
         self.conn.commit()
         return cursor.rowcount > 0
+
+    # ── SMTP Config (singleton sender) ─────────────────────────
+
+    def set_smtp_config(
+        self, smtp_host: str, smtp_port: int, smtp_user: str,
+        smtp_password: str, smtp_use_tls: bool = True,
+    ) -> None:
+        """Set or update the single SMTP sender config. Password encrypted."""
+        now = datetime.now().isoformat()
+        self.conn.execute(
+            """INSERT OR REPLACE INTO smtp_config
+               (id, smtp_host, smtp_port, smtp_user, smtp_password, smtp_use_tls, updated_at)
+               VALUES (1, ?, ?, ?, ?, ?, ?)""",
+            (smtp_host, smtp_port, smtp_user, encrypt(smtp_password), int(smtp_use_tls), now),
+        )
+        self.conn.commit()
+
+    def get_smtp_config(self) -> dict | None:
+        """Get the SMTP sender config. Returns None if not configured."""
+        row = self.conn.execute("SELECT * FROM smtp_config WHERE id = 1").fetchone()
+        if not row:
+            return None
+        config = dict(row)
+        config["smtp_password"] = decrypt(config["smtp_password"])
+        return config
+
+    # ── Email Subscribers ────────────────────────────────────
+
+    def add_email_subscriber(self, label: str, email: str) -> int:
+        """Add an email subscriber. Returns its ID."""
+        now = datetime.now().isoformat()
+        cursor = self.conn.execute(
+            "INSERT INTO email_subscribers (label, email, enabled, created_at) VALUES (?, ?, 1, ?)",
+            (label, email, now),
+        )
+        self.conn.commit()
+        return cursor.lastrowid  # type: ignore[return-value]
+
+    def get_email_subscribers(self, enabled_only: bool = False) -> list[dict]:
+        """Get all email subscribers."""
+        query = "SELECT * FROM email_subscribers"
+        if enabled_only:
+            query += " WHERE enabled = 1"
+        query += " ORDER BY created_at DESC"
+        rows = self.conn.execute(query).fetchall()
+        return [dict(r) for r in rows]
+
+    def delete_email_subscriber(self, sub_id: int) -> bool:
+        """Delete an email subscriber."""
+        cursor = self.conn.execute("DELETE FROM email_subscribers WHERE id = ?", (sub_id,))
+        self.conn.commit()
+        return cursor.rowcount > 0
+
+    def toggle_email_subscriber(self, sub_id: int, enabled: bool) -> bool:
+        """Toggle an email subscriber on/off."""
+        cursor = self.conn.execute(
+            "UPDATE email_subscribers SET enabled = ? WHERE id = ?", (int(enabled), sub_id),
+        )
+        self.conn.commit()
+        return cursor.rowcount > 0
+
+    def rename_email_subscriber(self, sub_id: int, label: str) -> bool:
+        """Rename an email subscriber."""
+        cursor = self.conn.execute(
+            "UPDATE email_subscribers SET label = ? WHERE id = ?", (label, sub_id),
+        )
+        self.conn.commit()
+        return cursor.rowcount > 0
+
+    # ── Auto-expire unavailable alerts ───────────────────────
+
+    def expire_unavailable_alerts(self, hours: int = 3) -> int:
+        """Mark alerts as 'ignored' if the book has been unavailable for > N hours.
+
+        Only affects alerts with status 'new' or 'seen'.
+        Returns count of expired alerts.
+        """
+        cutoff = (datetime.now() - timedelta(hours=hours)).isoformat()
+        cursor = self.conn.execute(
+            """UPDATE alerts SET status = 'ignored'
+               WHERE status IN ('new', 'seen')
+               AND notified_at < ?
+               AND listing_url IN (
+                   SELECT l.url FROM listings l
+                   JOIN isbn_availability ia ON l.isbn = ia.isbn AND l.platform = ia.platform
+                   WHERE ia.status = 'unavailable'
+               )""",
+            (cutoff,),
+        )
+        self.conn.commit()
+        if cursor.rowcount > 0:
+            from resell_bot.core.database import logger  # avoid circular
+            logging.getLogger(__name__).info(
+                "Auto-expired %d unavailable alerts (older than %dh)", cursor.rowcount, hours,
+            )
+        return cursor.rowcount
 
     # ── Notification Log ──────────────────────────────────────
 

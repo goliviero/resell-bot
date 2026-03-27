@@ -5,21 +5,20 @@
 <a href="/alert/{{ alert.id }}" class="btn" style="margin-bottom: 1rem;">&larr; Retour a l'alerte</a>
 
 <div class="detail-card" style="max-width: 600px;">
-    <h2 style="margin-bottom: 0.5rem;">Achat en cours</h2>
-    <p style="color: var(--muted); margin-bottom: 1.5rem;">{{ alert.title }} — {{ "%.2f"|format(alert.buy_price) }}&euro; sur Momox</p>
+    {% set platform_label = job.platform_label if job.platform_label is defined else {"momox_shop": "Momox", "recyclivre": "RecycLivre"}.get(alert.platform, alert.platform) %}
+    <h2 style="margin-bottom: 0.5rem;">Achat — {{ platform_label }}</h2>
+    <p style="color: var(--muted); margin-bottom: 1.5rem;">{{ alert.title }} — {{ "%.2f"|format(alert.buy_price) }}&euro;</p>
 
     <!-- Progress steps -->
     <div id="buy-progress" hx-get="/buy/{{ alert.id }}/poll" hx-trigger="every 2s" hx-swap="none"
          hx-on::after-request="updateBuyStatus(event)">
 
         {% set steps = [
-            ("opening", "Ouverture de la page"),
+            ("opening", "Ouverture de Chrome"),
             ("adding_to_cart", "Ajout au panier"),
-            ("cart_confirmed", "Article dans le panier"),
+            ("cart", "Panier"),
             ("checkout", "Passage en caisse"),
-            ("payment", "Page de paiement"),
-            ("waiting_3ds", "Validation 3D Secure"),
-            ("completed", "Achat termine")
+            ("completed", "Page de paiement")
         ] %}
 
         {% for step_key, step_label in steps %}
@@ -37,23 +36,23 @@
                 {{ step_label }}
             </span>
             {% if job.step == step_key and step_key not in ('completed', 'failed') %}
-            <span class="htmx-indicator" style="color: var(--accent); font-size: 0.8rem; margin-left: auto;">...</span>
+            <span style="color: var(--accent); font-size: 0.8rem; margin-left: auto;">...</span>
             {% endif %}
         </div>
         {% endfor %}
     </div>
 
-    <!-- Current status message -->
+    <!-- Status message -->
     <div id="status-message" style="margin-top: 1.5rem; padding: 1rem; border-radius: 8px;
         {% if job.step == 'completed' %}
             background: rgba(34,197,94,0.1); border: 1px solid var(--green);">
-            <span style="color: var(--green); font-weight: 700;">Achat termine avec succes !</span>
+            <span style="color: var(--green); font-weight: 700;">Complete le paiement dans la fenetre Chrome ouverte</span>
         {% elif job.step == 'failed' %}
             background: rgba(239,68,68,0.1); border: 1px solid var(--red);">
             <span style="color: var(--red); font-weight: 700;">Echec: {{ job.error }}</span>
-        {% elif job.step == 'waiting_3ds' %}
-            background: rgba(245,158,11,0.1); border: 1px solid var(--orange);">
-            <span style="color: var(--orange); font-weight: 700;">Complete le paiement 3D Secure dans le navigateur ouvert</span>
+            <div style="margin-top: 0.5rem;">
+                <a href="{{ alert.url }}" target="_blank" class="btn btn-sm" style="text-decoration: none;">Ouvrir manuellement</a>
+            </div>
         {% else %}
             background: rgba(108,99,255,0.1); border: 1px solid var(--accent);">
             <span style="color: var(--accent);">{{ job.step_label }}</span>
@@ -78,7 +77,6 @@ function updateBuyStatus(event) {
     if (!event.detail.successful) return;
     const data = JSON.parse(event.detail.xhr.responseText);
 
-    // Update log
     const logEl = document.getElementById('buy-log');
     if (logEl && data.steps_done) {
         logEl.innerHTML = data.steps_done.map(e =>
@@ -87,21 +85,16 @@ function updateBuyStatus(event) {
         logEl.scrollTop = logEl.scrollHeight;
     }
 
-    // Update status message
     const msgEl = document.getElementById('status-message');
     if (msgEl) {
         if (data.step === 'completed') {
             msgEl.style.background = 'rgba(34,197,94,0.1)';
             msgEl.style.borderColor = 'var(--green)';
-            msgEl.innerHTML = '<span style="color: var(--green); font-weight: 700;">Achat termine avec succes !</span>';
+            msgEl.innerHTML = '<span style="color: var(--green); font-weight: 700;">Complete le paiement dans la fenetre Chrome ouverte</span>';
         } else if (data.step === 'failed') {
             msgEl.style.background = 'rgba(239,68,68,0.1)';
             msgEl.style.borderColor = 'var(--red)';
             msgEl.innerHTML = `<span style="color: var(--red); font-weight: 700;">Echec: ${data.error}</span>`;
-        } else if (data.step === 'waiting_3ds') {
-            msgEl.style.background = 'rgba(245,158,11,0.1)';
-            msgEl.style.borderColor = 'var(--orange)';
-            msgEl.innerHTML = '<span style="color: var(--orange); font-weight: 700;">Complete le paiement 3D Secure dans le navigateur ouvert</span>';
         } else {
             msgEl.style.background = 'rgba(108,99,255,0.1)';
             msgEl.style.borderColor = 'var(--accent)';
@@ -109,7 +102,6 @@ function updateBuyStatus(event) {
         }
     }
 
-    // Stop polling when done
     if (data.step === 'completed' || data.step === 'failed') {
         document.getElementById('buy-progress').removeAttribute('hx-get');
         htmx.process(document.getElementById('buy-progress'));

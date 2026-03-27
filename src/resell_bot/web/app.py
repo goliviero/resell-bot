@@ -1,12 +1,13 @@
 """FastAPI dashboard for resell-bot — alert viewer + buy actions."""
 
+from datetime import datetime
 from pathlib import Path
 
 from fastapi import FastAPI, Form, Query, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
-from resell_bot.core.buyer import BuyStep, get_all_jobs, get_job, start_buy
+from resell_bot.core.buyer import BuyStep, get_all_jobs, get_job, set_scheduler as set_buyer_scheduler, start_buy
 from resell_bot.core.database import Database
 from resell_bot.core.models import AlertStatus
 from resell_bot.web.auth import setup_auth
@@ -27,6 +28,9 @@ def configure(db: Database, scheduler=None) -> None:
     global _db, _scheduler
     _db = db
     _scheduler = scheduler
+    # Let the buyer pause/resume the scanner during purchases
+    if scheduler is not None:
+        set_buyer_scheduler(scheduler)
 
 
 def get_db() -> Database:
@@ -57,8 +61,9 @@ async def dashboard(
     if not filter_status and page == 1:
         new_alerts = db.get_alerts(status=AlertStatus.NEW, limit=10)
 
-    scan_overview = db.get_scan_overview("momox_shop")
-    live_status = _scheduler.scan_status if _scheduler else {}
+    scan_momox = db.get_scan_overview("momox_shop")
+    scan_recyclivre = db.get_scan_overview("recyclivre")
+    live = _scheduler.scan_status if _scheduler else {}
 
     return templates.TemplateResponse(request, "dashboard.html", {
         "alerts": alerts,
@@ -67,8 +72,10 @@ async def dashboard(
         "current_status": status,
         "page": page,
         "per_page": per_page,
-        "scan": scan_overview,
-        "live": live_status,
+        "platforms": [
+            {"name": "Momox", "scan": scan_momox, "live": live.get("momox_shop", {})},
+            {"name": "RecycLivre", "scan": scan_recyclivre, "live": live.get("recyclivre", {})},
+        ],
         "active_tab": "dashboard",
     })
 
@@ -159,13 +166,15 @@ async def stats_fragment(request: Request):
 
 @app.get("/scan-status", response_class=HTMLResponse)
 async def scan_status_fragment(request: Request):
-    """HTMX: return live scan status panel."""
+    """HTMX: return live scan status panels for all platforms."""
     db = get_db()
-    scan_overview = db.get_scan_overview("momox_shop")
-    live_status = _scheduler.scan_status if _scheduler else {}
+    live = _scheduler.scan_status if _scheduler else {}
+    platforms = [
+        {"name": "Momox", "scan": db.get_scan_overview("momox_shop"), "live": live.get("momox_shop", {})},
+        {"name": "RecycLivre", "scan": db.get_scan_overview("recyclivre"), "live": live.get("recyclivre", {})},
+    ]
     return templates.TemplateResponse(request, "partials/scan_status.html", {
-        "scan": scan_overview,
-        "live": live_status,
+        "platforms": platforms,
     })
 
 
@@ -208,22 +217,34 @@ async def mark_all_seen():
 
 # ── Settings ──────────────────────────────────────────────
 
-def _settings_ctx(db, message: str = "", error: str = "") -> dict:
+def _settings_ctx(db, message: str = "", error: str = "", log_page: int = 1) -> dict:
     """Build template context for the settings page."""
+    log_per_page = 25
+    notif_log = db.get_notification_log(limit=log_per_page, offset=(log_page - 1) * log_per_page)
+    notif_log_total = db.count_notification_log()
     return {
         "discord_webhooks": db.get_discord_webhooks(),
-        "email_configs": db.get_email_configs(),
+        "email_subscribers": db.get_email_subscribers(),
+        "smtp_configured": db.get_smtp_config() is not None,
         "message": message,
         "error": error,
         "active_tab": "settings",
+        "notif_log": notif_log,
+        "notif_log_total": notif_log_total,
+        "log_page": log_page,
+        "log_per_page": log_per_page,
     }
 
 
 @app.get("/settings", response_class=HTMLResponse)
-async def settings_page(request: Request, msg: str | None = None):
+async def settings_page(
+    request: Request,
+    msg: str | None = None,
+    log_page: int = Query(1, ge=1),
+):
     """Notification settings page — list all webhooks + emails."""
     db = get_db()
-    return templates.TemplateResponse(request, "settings.html", _settings_ctx(db, message=msg or ""))
+    return templates.TemplateResponse(request, "settings.html", _settings_ctx(db, message=msg or "", log_page=log_page))
 
 
 @app.post("/settings/discord/add", response_class=HTMLResponse)
@@ -257,7 +278,6 @@ async def delete_discord_webhook(wh_id: int):
 async def toggle_discord_webhook(wh_id: int):
     """Toggle a Discord webhook on/off."""
     db = get_db()
-    # Read current state, flip it
     webhooks = db.get_discord_webhooks()
     for wh in webhooks:
         if wh["id"] == wh_id:
@@ -266,9 +286,35 @@ async def toggle_discord_webhook(wh_id: int):
     return RedirectResponse("/settings", status_code=303)
 
 
+@app.post("/settings/discord/{wh_id}/rename", response_class=HTMLResponse)
+async def rename_discord_webhook(wh_id: int, name: str = Form(...)):
+    """Rename a Discord webhook."""
+    get_db().rename_discord_webhook(wh_id, name.strip())
+    return RedirectResponse("/settings?msg=Webhook+renomme", status_code=303)
+
+
+def _build_test_alert(db) -> "Alert":
+    """Build a fake 'Le Petit Prince' test Alert — clearly marked as TEST."""
+    from resell_bot.core.models import Alert, Listing
+
+    listing = Listing(
+        title="[TEST] Le Petit Prince",
+        price=3.49,
+        url="https://www.momox-shop.fr/angebote?searchparam=9782070612758",
+        platform="momox_shop",
+        isbn="9782070612758",
+        condition="très bon",
+        seller="Momox",
+        author="Antoine de Saint-Exupery",
+        found_at=datetime.now(),
+        image_url="https://images-eu.ssl-images-amazon.com/images/I/51H0JEQDFEL._SY291_BO1,204,203,200_QL40_FMwebp_.jpg",
+    )
+    return Alert(listing=listing, max_buy_price=12.0, savings=8.51)
+
+
 @app.post("/settings/discord/{wh_id}/test", response_class=HTMLResponse)
 async def test_discord_webhook(wh_id: int):
-    """Send a test message to a specific Discord webhook."""
+    """Send a realistic test alert to a specific Discord webhook."""
     db = get_db()
     webhooks = db.get_discord_webhooks()
     webhook_url = None
@@ -279,78 +325,83 @@ async def test_discord_webhook(wh_id: int):
     if not webhook_url:
         return HTMLResponse('<span style="color: var(--red);">Webhook introuvable</span>')
 
-    import httpx
-    payload = {"content": "Test resell-bot — Discord OK!"}
-    try:
-        async with httpx.AsyncClient() as client:
-            resp = await client.post(webhook_url, json=payload, timeout=10)
-            if resp.status_code in (200, 204):
-                return HTMLResponse('<span style="color: var(--green);">Envoye!</span>')
-            return HTMLResponse(f'<span style="color: var(--red);">Erreur {resp.status_code}</span>')
-    except Exception as e:
-        return HTMLResponse(f'<span style="color: var(--red);">{e}</span>')
+    from resell_bot.core.discord_notifier import send_discord_alert
+    alert = _build_test_alert(db)
+    ok = await send_discord_alert(webhook_url, alert, is_test=True)
+    if ok:
+        return HTMLResponse(f'<span style="color: var(--green);">Alerte test envoyee!</span>')
+    return HTMLResponse('<span style="color: var(--red);">Echec webhook</span>')
 
 
-@app.post("/settings/email/add", response_class=HTMLResponse)
-async def add_email_config(
+@app.post("/settings/email/subscribe", response_class=HTMLResponse)
+async def add_email_subscriber(
     request: Request,
     label: str = Form(...),
-    email_to: str = Form(...),
-    smtp_host: str = Form(...),
-    smtp_port: int = Form(587),
-    smtp_user: str = Form(...),
-    smtp_password: str = Form(...),
+    email: str = Form(...),
 ):
-    """Add a new email notification config."""
+    """Subscribe an email address to receive alerts."""
     db = get_db()
-    db.add_email_config(
-        label=label.strip() or "Email",
-        email_to=email_to.strip(),
-        smtp_host=smtp_host.strip(),
-        smtp_port=smtp_port,
-        smtp_user=smtp_user.strip(),
-        smtp_password=smtp_password.strip(),
-    )
-    return RedirectResponse("/settings?msg=Config+email+ajoutee!", status_code=303)
+    label, email = label.strip(), email.strip()
+    if not email or "@" not in email:
+        return templates.TemplateResponse(request, "settings.html",
+            _settings_ctx(db, error="Adresse email invalide."))
+    try:
+        db.add_email_subscriber(label or "Email", email)
+    except Exception:
+        return templates.TemplateResponse(request, "settings.html",
+            _settings_ctx(db, error="Cet email est deja abonne."))
+    return RedirectResponse("/settings?msg=Abonnement+email+ajoute!", status_code=303)
 
 
-@app.post("/settings/email/{config_id}/delete")
-async def delete_email_config(config_id: int):
-    """Delete an email config."""
-    get_db().delete_email_config(config_id)
-    return RedirectResponse("/settings?msg=Config+email+supprimee", status_code=303)
+@app.post("/settings/email/{sub_id}/delete")
+async def delete_email_subscriber(sub_id: int):
+    """Remove an email subscriber."""
+    get_db().delete_email_subscriber(sub_id)
+    return RedirectResponse("/settings?msg=Abonne+supprime", status_code=303)
 
 
-@app.post("/settings/email/{config_id}/test", response_class=HTMLResponse)
-async def test_email_config(config_id: int):
-    """Send a test email to verify SMTP config works."""
+@app.post("/settings/email/{sub_id}/toggle")
+async def toggle_email_subscriber(sub_id: int):
+    """Toggle an email subscriber on/off."""
     db = get_db()
-    configs = db.get_email_configs()
-    config = next((c for c in configs if c["id"] == config_id), None)
-    if not config:
-        return HTMLResponse('<span style="color: var(--red);">Config introuvable</span>')
-
-    from resell_bot.core.email_notifier import send_test_email
-    ok = send_test_email(
-        config["smtp_host"], config["smtp_port"],
-        config["smtp_user"], config["smtp_password"],
-        config["email_to"], bool(config["smtp_use_tls"]),
-    )
-    if ok:
-        return HTMLResponse('<span style="color: var(--green);">Email envoye!</span>')
-    return HTMLResponse('<span style="color: var(--red);">Echec — verifiez les parametres SMTP</span>')
-
-
-@app.post("/settings/email/{config_id}/toggle")
-async def toggle_email_config(config_id: int):
-    """Toggle an email config on/off."""
-    db = get_db()
-    configs = db.get_email_configs()
-    for ec in configs:
-        if ec["id"] == config_id:
-            db.toggle_email_config(config_id, not ec["enabled"])
+    subs = db.get_email_subscribers()
+    for s in subs:
+        if s["id"] == sub_id:
+            db.toggle_email_subscriber(sub_id, not s["enabled"])
             break
     return RedirectResponse("/settings", status_code=303)
+
+
+@app.post("/settings/email/{sub_id}/rename", response_class=HTMLResponse)
+async def rename_email_subscriber(sub_id: int, label: str = Form(...)):
+    """Rename an email subscriber."""
+    get_db().rename_email_subscriber(sub_id, label.strip())
+    return RedirectResponse("/settings?msg=Abonne+renomme", status_code=303)
+
+
+@app.post("/settings/email/{sub_id}/test", response_class=HTMLResponse)
+async def test_email_subscriber(sub_id: int):
+    """Send a realistic test alert email to a specific subscriber."""
+    db = get_db()
+    smtp = db.get_smtp_config()
+    if not smtp:
+        return HTMLResponse('<span style="color: var(--red);">SMTP non configure — voir Admin</span>')
+
+    subs = db.get_email_subscribers()
+    sub = next((s for s in subs if s["id"] == sub_id), None)
+    if not sub:
+        return HTMLResponse('<span style="color: var(--red);">Abonne introuvable</span>')
+
+    from resell_bot.core.email_notifier import send_test_alert_email
+    alert = _build_test_alert(db)
+    ok = send_test_alert_email(
+        smtp["smtp_host"], smtp["smtp_port"],
+        smtp["smtp_user"], smtp["smtp_password"],
+        sub["email"], alert, bool(smtp["smtp_use_tls"]),
+    )
+    if ok:
+        return HTMLResponse(f'<span style="color: var(--green);">Alerte test envoyee ({alert.listing.title[:30]})</span>')
+    return HTMLResponse('<span style="color: var(--red);">Echec — verifiez la config SMTP dans Admin</span>')
 
 
 # ── Admin ─────────────────────────────────────────────────────
@@ -359,33 +410,72 @@ async def toggle_email_config(config_id: int):
 async def admin_page(
     request: Request,
     msg: str | None = None,
-    log_page: int = Query(1, ge=1),
 ):
-    """Admin control panel with notification log."""
+    """Admin control panel."""
     db = get_db()
     from resell_bot.core.notifier import Notifier
     notifier = Notifier(db)
     notifier.reload_channels()
-    scan_overview = db.get_scan_overview("momox_shop")
+    scan_momox = db.get_scan_overview("momox_shop")
     stats = db.get_alert_stats()
-    live_status = _scheduler.scan_status if _scheduler else {}
-
-    log_per_page = 25
-    notif_log = db.get_notification_log(limit=log_per_page, offset=(log_page - 1) * log_per_page)
-    notif_log_total = db.count_notification_log()
+    live = _scheduler.scan_status if _scheduler else {}
+    # Admin needs overall running flag (any platform scanning)
+    any_running = any(ps.get("running") for ps in live.values()) if live else False
 
     return templates.TemplateResponse(request, "admin.html", {
-        "scan": scan_overview,
-        "live": live_status,
+        "scan": scan_momox,
+        "live": {"running": any_running},
+        "platforms": [
+            {"name": "Momox", "scan": scan_momox, "live": live.get("momox_shop", {})},
+            {"name": "RecycLivre", "scan": db.get_scan_overview("recyclivre"), "live": live.get("recyclivre", {})},
+        ],
         "alerts_total": stats.get("total", 0),
         "notif_channels": notifier.get_status_summary(),
+        "smtp_config": db.get_smtp_config(),
         "message": msg or "",
         "active_tab": "admin",
-        "notif_log": notif_log,
-        "notif_log_total": notif_log_total,
-        "log_page": log_page,
-        "log_per_page": log_per_page,
     })
+
+
+@app.post("/admin/smtp/save")
+async def admin_smtp_save(
+    smtp_host: str = Form(...),
+    smtp_port: int = Form(587),
+    smtp_user: str = Form(...),
+    smtp_password: str = Form(...),
+    smtp_use_tls: int = Form(1),
+):
+    """Save the single SMTP sender config (admin only)."""
+    db = get_db()
+    db.set_smtp_config(
+        smtp_host=smtp_host.strip(),
+        smtp_port=smtp_port,
+        smtp_user=smtp_user.strip(),
+        smtp_password=smtp_password.strip(),
+        smtp_use_tls=bool(smtp_use_tls),
+    )
+    return RedirectResponse("/admin?msg=Config+SMTP+enregistree!", status_code=303)
+
+
+@app.post("/admin/smtp/test", response_class=HTMLResponse)
+async def admin_smtp_test():
+    """Send a realistic test alert email to self (SMTP self-test)."""
+    db = get_db()
+    smtp = db.get_smtp_config()
+    if not smtp:
+        return HTMLResponse('<span style="color: var(--red);">SMTP non configure</span>')
+
+    from resell_bot.core.email_notifier import send_test_alert_email
+    alert = _build_test_alert(db)
+    ok = send_test_alert_email(
+        smtp["smtp_host"], smtp["smtp_port"],
+        smtp["smtp_user"], smtp["smtp_password"],
+        smtp["smtp_user"],  # send to self
+        alert, bool(smtp["smtp_use_tls"]),
+    )
+    if ok:
+        return HTMLResponse(f'<span style="color: var(--green);">Alerte test envoyee a {smtp["smtp_user"]}!</span>')
+    return HTMLResponse('<span style="color: var(--red);">Echec — verifiez host/port/identifiants</span>')
 
 
 @app.get("/admin/scan-info", response_class=HTMLResponse)
@@ -416,19 +506,17 @@ async def admin_scan_info(request: Request):
 
 @app.post("/admin/scan/stop")
 async def admin_scan_stop():
-    """Stop the continuous scanner."""
+    """Stop the continuous scanner. Auto-restarts after 1h."""
     if _scheduler:
-        _scheduler._running = False
-    return RedirectResponse("/admin?msg=Scanner+arrete", status_code=303)
+        _scheduler.stop_scan(auto_restart_hours=1.0)
+    return RedirectResponse("/admin?msg=Scanner+arrete+(redemarrage+auto+dans+1h)", status_code=303)
 
 
 @app.post("/admin/scan/start")
 async def admin_scan_start():
     """Restart the continuous scanner in background."""
-    if _scheduler and not _scheduler._running:
-        import asyncio
-        _scheduler._running = True
-        asyncio.get_event_loop().create_task(_scheduler.run_continuous())
+    if _scheduler:
+        _scheduler.start_scan()
     return RedirectResponse("/admin?msg=Scanner+demarre", status_code=303)
 
 
@@ -436,9 +524,9 @@ async def admin_scan_start():
 async def admin_scan_once():
     """Trigger a single manual scan."""
     if _scheduler:
-        import asyncio
+        loop = _scheduler._get_loop()
         _scheduler._running = True
-        asyncio.get_event_loop().create_task(_scheduler.run_once())
+        loop.call_soon_threadsafe(loop.create_task, _scheduler.run_once())
     return RedirectResponse("/admin?msg=Scan+manuel+lance", status_code=303)
 
 
@@ -453,34 +541,22 @@ async def admin_clear_alerts():
 
 # ── Buy Flow ─────────────────────────────────────────────────
 
-@app.post("/buy/{alert_id}", response_class=HTMLResponse)
-async def trigger_buy(request: Request, alert_id: int):
-    """Start the automated purchase flow for an alert."""
+@app.post("/buy/{alert_id}")
+async def trigger_buy(alert_id: int):
+    """Open product URL in user's browser and redirect back to dashboard."""
     db = get_db()
     alert = db.get_alert_by_id(alert_id)
     if not alert:
         return HTMLResponse("Alerte introuvable", status_code=404)
 
-    existing = get_job(alert_id)
-    if existing and existing.step not in (BuyStep.COMPLETED, BuyStep.FAILED):
-        # Already running — redirect to status page
-        return templates.TemplateResponse(request, "buy_status.html", {
-            "job": existing.to_dict(),
-            "alert": alert,
-            "active_tab": "dashboard",
-        })
-
-    job = await start_buy(
+    await start_buy(
         alert_id=alert_id,
         product_url=alert["url"],
         title=alert["title"],
         price=alert["buy_price"],
+        platform=alert.get("platform", "momox_shop"),
     )
-    return templates.TemplateResponse(request, "buy_status.html", {
-        "job": job.to_dict(),
-        "alert": alert,
-        "active_tab": "dashboard",
-    })
+    return RedirectResponse("/", status_code=303)
 
 
 @app.get("/buy/{alert_id}/status", response_class=HTMLResponse)

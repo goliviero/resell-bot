@@ -1,75 +1,70 @@
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 1rem;">
+{% for p in platforms %}
 <div class="scan-panel">
     <div class="scan-header">
-        <strong>Scan Momox</strong>
-        {% if live and live.get('running') %}
+        <strong>{{ p.name }}</strong>
+        {% if p.live and p.live.get('running') %}
         <span class="badge badge-new" style="margin-left: 0.5rem;">EN COURS</span>
-        {% else %}
+        {% elif p.live and p.live.get('cycle_count', 0) > 0 %}
         <span class="badge badge-seen" style="margin-left: 0.5rem;">IDLE</span>
+        {% else %}
+        <span class="badge" style="margin-left: 0.5rem; opacity: 0.5;">EN ATTENTE</span>
         {% endif %}
-        {% if live and live.get('cycle_count', 0) > 0 %}
-        <span style="margin-left: auto; font-size: 0.75rem; color: var(--muted);">Cycle #{{ live.get('cycle_count', 0) }}</span>
+        {% if p.live and p.live.get('cycle_count', 0) > 0 %}
+        <span style="margin-left: auto; font-size: 0.75rem; color: var(--muted);">Cycle #{{ p.live.get('cycle_count', 0) }}</span>
         {% endif %}
     </div>
 
-    <!-- Progress bar -->
-    {% if live and live.get('running') and live.get('total_count', 0) > 0 %}
-    {% set pct = ((live.get('scanned_count', 0) / live.get('total_count', 1)) * 100)|int %}
+    <!-- Progress bar — always visible -->
+    {% if p.live and p.live.get('total_count', 0) > 0 %}
+    {% set pct = ((p.live.get('scanned_count', 0) / p.live.get('total_count', 1)) * 100)|int %}
+    {% set bar_color = 'var(--green)' if p.live.get('running') else 'var(--muted)' %}
     <div style="margin: 0.5rem 0;">
         <div style="display: flex; justify-content: space-between; font-size: 0.75rem; color: var(--muted); margin-bottom: 0.25rem;">
-            <span>{{ live.get('scanned_count', 0) }} / {{ live.get('total_count', 0) }} ISBNs</span>
+            <span>{{ p.live.get('scanned_count', 0) }} / {{ p.live.get('total_count', 0) }} ISBNs</span>
             <span>{{ pct }}%</span>
         </div>
         <div style="background: var(--border); border-radius: 4px; height: 6px; overflow: hidden;">
-            <div style="background: var(--green); height: 100%; width: {{ pct }}%; transition: width 0.3s;"></div>
+            <div style="background: {{ bar_color }}; height: 100%; width: {{ pct }}%; transition: width 0.3s;"></div>
         </div>
     </div>
     {% endif %}
 
-    <!-- Stats grid -->
-    <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.5rem; margin-top: 0.5rem;">
+    <!-- Stats grid — 4 columns -->
+    <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.4rem; margin-top: 0.5rem;">
         <div class="scan-stat">
-            <div style="font-size: 1.2rem; font-weight: 700;">{{ scan.total_checked }}</div>
-            <div style="font-size: 0.7rem; color: var(--muted);">SCANNES</div>
+            <div style="font-size: 1.1rem; font-weight: 700; color: var(--green);">{{ p.scan.deals }}</div>
+            <div style="font-size: 0.6rem; color: var(--muted);">DEALS</div>
         </div>
         <div class="scan-stat">
-            <div style="font-size: 1.2rem; font-weight: 700; color: var(--green);">{{ scan.available }}</div>
-            <div style="font-size: 0.7rem; color: var(--muted);">DISPOS</div>
+            <div style="font-size: 1.1rem; font-weight: 700; color: var(--orange);">{{ p.scan.available_no_deal }}</div>
+            <div style="font-size: 0.6rem; color: var(--muted);">HORS BUDGET</div>
         </div>
         <div class="scan-stat">
-            <div style="font-size: 1.2rem; font-weight: 700; color: var(--red);">{{ scan.unavailable }}</div>
-            <div style="font-size: 0.7rem; color: var(--muted);">INDISPOS</div>
+            <div style="font-size: 1.1rem; font-weight: 700; color: var(--red);">{{ p.scan.unavailable }}</div>
+            <div style="font-size: 0.6rem; color: var(--muted);">INDISPOS</div>
         </div>
         <div class="scan-stat">
-            <div style="font-size: 1.2rem; font-weight: 700; color: var(--muted);">{{ scan.unchecked }}</div>
-            <div style="font-size: 0.7rem; color: var(--muted);">EN ATTENTE</div>
+            <div style="font-size: 1.1rem; font-weight: 700; color: var(--muted);">{{ p.scan.unchecked }}</div>
+            <div style="font-size: 0.6rem; color: var(--muted);">EN ATTENTE</div>
         </div>
     </div>
 
     <!-- Cycle info -->
-    <div style="margin-top: 0.75rem; font-size: 0.8rem; color: var(--muted);">
-        {% if live and live.get('last_cycle_duration') %}
-        <div style="display: flex; justify-content: space-between; padding: 0.25rem 0; border-bottom: 1px solid var(--border);">
+    <div style="margin-top: 0.5rem; font-size: 0.78rem; color: var(--muted);">
+        {% if p.live and p.live.get('last_cycle_duration') %}
+        <div style="display: flex; justify-content: space-between; padding: 0.2rem 0;">
             <span>Dernier cycle</span>
-            <span>{{ "%.0f"|format(live.get('last_cycle_duration', 0)) }}s ({{ "%.1f"|format(live.get('last_cycle_duration', 0) / 60) }} min)</span>
+            <span>{{ "%.0f"|format(p.live.get('last_cycle_duration', 0)) }}s ({{ "%.1f"|format(p.live.get('last_cycle_duration', 0) / 60) }} min)</span>
         </div>
         {% endif %}
-        {% if live and live.get('deals_found', 0) > 0 %}
-        <div style="display: flex; justify-content: space-between; padding: 0.25rem 0; border-bottom: 1px solid var(--border);">
+        {% if p.live and p.live.get('deals_found', 0) > 0 %}
+        <div style="display: flex; justify-content: space-between; padding: 0.2rem 0;">
             <span>Deals ce cycle</span>
-            <span style="color: var(--green); font-weight: 700;">{{ live.get('deals_found', 0) }}</span>
-        </div>
-        {% endif %}
-        {% if live and live.get('available_found', 0) > 0 %}
-        <div style="display: flex; justify-content: space-between; padding: 0.25rem 0; border-bottom: 1px solid var(--border);">
-            <span>Dispos ce cycle</span>
-            <span>{{ live.get('available_found', 0) }}</span>
+            <span style="color: var(--green); font-weight: 700;">{{ p.live.get('deals_found', 0) }}</span>
         </div>
         {% endif %}
     </div>
-
-    {% if scan.last_scan_at %}
-    <div style="margin-top: 0.5rem; font-size: 0.75rem; color: var(--muted); text-align: right;">
-        Dernier scan: {{ scan.last_scan_at[:19] }}
-    </div>
-    {% endif %}
+</div>
+{% endfor %}
 </div>

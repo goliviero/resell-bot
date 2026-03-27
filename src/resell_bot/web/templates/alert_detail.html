@@ -21,7 +21,7 @@
     </div>
     <div class="detail-row">
         <span class="detail-label">Plateforme</span>
-        <span>{{ alert.platform }}</span>
+        <span>{{ {"momox_shop": "Momox", "recyclivre": "RecycLivre"}.get(alert.platform, alert.platform) }}</span>
     </div>
     <div class="detail-row">
         <span class="detail-label">Prix de vente</span>
@@ -50,13 +50,16 @@
         <span>{{ alert.notified_at[:19] }}</span>
     </div>
 
+    {% set platform_label = {"momox_shop": "Momox", "recyclivre": "RecycLivre"}.get(alert.platform, alert.platform) %}
     <div style="margin-top: 1.5rem; display: flex; gap: 0.5rem; flex-wrap: wrap;">
         <form method="post" action="/buy/{{ alert.id }}" style="display: inline;">
             <button type="submit" class="btn btn-buy" style="font-size: 0.95rem; padding: 0.5rem 1.2rem;">
-                ACHETER SUR MOMOX
+                ACHAT RAPIDE {{ platform_label|upper }}
             </button>
         </form>
-        <a href="{{ alert.url }}" target="_blank" class="btn">Voir sur Momox</a>
+        <a href="{{ alert.url }}" target="_blank" class="btn" style="text-decoration: none; padding: 0.5rem 1.2rem;">
+            Voir sur {{ platform_label }}
+        </a>
         {% if alert.status != 'bought' %}
         <button class="btn"
                 hx-post="/alert/{{ alert.id }}/status/bought"

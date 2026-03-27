@@ -23,13 +23,19 @@ class Notifier:
         self.db = db
         # Cached channels — refreshed before each send
         self._discord_webhooks: list[dict] = []
-        self._email_configs: list[dict] = []
+        self._smtp_config: dict | None = None
+        self._email_subscribers: list[dict] = []
+        self._email_configs: list[dict] = []  # legacy
 
     def reload_channels(self) -> None:
         """Reload enabled channels from DB."""
         if not self.db:
             return
         self._discord_webhooks = self.db.get_discord_webhooks(enabled_only=True)
+        # New model: single SMTP config + multiple subscribers
+        self._smtp_config = self.db.get_smtp_config()
+        self._email_subscribers = self.db.get_email_subscribers(enabled_only=True)
+        # Legacy support: also load old email_configs
         self._email_configs = self.db.get_email_configs(enabled_only=True)
 
     @property
@@ -38,7 +44,7 @@ class Notifier:
 
     @property
     def email_enabled(self) -> bool:
-        return len(self._email_configs) > 0
+        return (self._smtp_config is not None and len(self._email_subscribers) > 0) or len(self._email_configs) > 0
 
     @property
     def any_enabled(self) -> bool:
@@ -49,8 +55,11 @@ class Notifier:
         channels = []
         for wh in self._discord_webhooks:
             channels.append(f"Discord ({wh['name']})")
+        if self._smtp_config and self._email_subscribers:
+            emails = ", ".join(s["label"] for s in self._email_subscribers)
+            channels.append(f"Email ({emails})")
         for ec in self._email_configs:
-            channels.append(f"Email ({ec['label']})")
+            channels.append(f"Email legacy ({ec['label']})")
         return channels
 
     async def send_alert(self, alert: Alert) -> bool:
@@ -69,6 +78,24 @@ class Notifier:
                     success=ok, error=None if ok else "webhook error",
                 )
 
+        # New model: single SMTP config → all subscribers
+        smtp = self._smtp_config
+        if smtp:
+            for sub in self._email_subscribers:
+                ok = send_email_alert(
+                    smtp["smtp_host"], smtp["smtp_port"], smtp["smtp_user"], smtp["smtp_password"],
+                    sub["email"], alert, bool(smtp["smtp_use_tls"]),
+                )
+                results.append(ok)
+                if self.db:
+                    self.db.log_notification(
+                        alert_id=None, channel="email", channel_name=sub["label"],
+                        title=alert.listing.title, isbn=alert.listing.isbn,
+                        price=alert.listing.price, savings=alert.savings,
+                        success=ok, error=None if ok else "smtp error",
+                    )
+
+        # Legacy email configs (backwards compat)
         for ec in self._email_configs:
             ok = send_email_alert(
                 ec["smtp_host"], ec["smtp_port"], ec["smtp_user"], ec["smtp_password"],

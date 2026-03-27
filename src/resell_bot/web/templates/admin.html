@@ -24,7 +24,7 @@
         <div class="settings-header">
             <h3>Controle du scanner</h3>
         </div>
-        <div class="actions" style="gap: 0.75rem;">
+        <div class="actions" style="gap: 0.75rem; align-items: center;">
             {% if live.get('running') %}
             <form method="post" action="/admin/scan/stop" style="display:inline;">
                 <button type="submit" class="btn" style="background: var(--red); color: white; border-color: var(--red);">
@@ -37,6 +37,9 @@
                     Demarrer le scan continu
                 </button>
             </form>
+            <span style="font-size: 0.75rem; color: var(--muted);">
+                Arrete — redemarrage auto dans 1h max
+            </span>
             {% endif %}
             <form method="post" action="/admin/scan/once" style="display:inline;">
                 <button type="submit" class="btn">
@@ -71,6 +74,70 @@
         </div>
     </div>
 
+    <!-- ── SMTP Config (admin only) ────────────────────────── -->
+    <div class="settings-section">
+        <div class="settings-header">
+            <h3>Serveur SMTP (envoi des emails)</h3>
+            {% if smtp_config %}
+            <span class="badge badge-new">Configure</span>
+            {% else %}
+            <span class="badge badge-ignored">Non configure</span>
+            {% endif %}
+        </div>
+        <p style="color: var(--muted); font-size: 0.8rem; margin-bottom: 0.75rem;">
+            Un seul serveur SMTP pour envoyer toutes les notifications email.
+            Les abonnes s'ajoutent depuis l'onglet Notifications.
+        </p>
+
+        <form method="post" action="/admin/smtp/save">
+            <div style="display: grid; grid-template-columns: 2fr 1fr 1fr; gap: 0.75rem;">
+                <div class="form-group">
+                    <label>Serveur SMTP</label>
+                    <input type="text" name="smtp_host" required
+                           value="{{ smtp_config.smtp_host if smtp_config else '' }}"
+                           placeholder="smtp.gmail.com" class="form-input">
+                </div>
+                <div class="form-group">
+                    <label>Port</label>
+                    <input type="number" name="smtp_port" required
+                           value="{{ smtp_config.smtp_port if smtp_config else 587 }}"
+                           class="form-input">
+                </div>
+                <div class="form-group">
+                    <label>TLS</label>
+                    <select name="smtp_use_tls" class="form-input">
+                        <option value="1" {% if not smtp_config or smtp_config.smtp_use_tls %}selected{% endif %}>STARTTLS (587)</option>
+                        <option value="0" {% if smtp_config and not smtp_config.smtp_use_tls %}selected{% endif %}>SSL (465)</option>
+                    </select>
+                </div>
+            </div>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem;">
+                <div class="form-group">
+                    <label>Utilisateur SMTP</label>
+                    <input type="text" name="smtp_user" required
+                           value="{{ smtp_config.smtp_user if smtp_config else '' }}"
+                           placeholder="ton.email@gmail.com" class="form-input">
+                </div>
+                <div class="form-group">
+                    <label>Mot de passe (app password)</label>
+                    <input type="password" name="smtp_password" required
+                           value="{{ smtp_config.smtp_password if smtp_config else '' }}"
+                           placeholder="mot de passe d'application" class="form-input">
+                </div>
+            </div>
+            <div style="display: flex; gap: 0.75rem; align-items: center; margin-top: 0.5rem;">
+                <button type="submit" class="btn">Enregistrer</button>
+                {% if smtp_config %}
+                <button type="button" class="btn btn-sm"
+                        hx-post="/admin/smtp/test"
+                        hx-target="#smtp-test-result"
+                        hx-swap="innerHTML">Tester</button>
+                <span id="smtp-test-result" style="font-size: 0.75rem;"></span>
+                {% endif %}
+            </div>
+        </form>
+    </div>
+
     <!-- ── Danger Zone ────────────────────────────────────── -->
     <div class="settings-section" style="border-color: rgba(239,68,68,0.3);">
         <div class="settings-header">
@@ -89,78 +156,6 @@
         </div>
     </div>
 
-    <!-- ── Notification Log ─────────────────────────────────── -->
-    <div class="settings-section" style="margin-top: 1rem;">
-        <div class="settings-header">
-            <h3>Historique des notifications</h3>
-            <span class="badge badge-seen">{{ notif_log_total }} total</span>
-        </div>
-
-        {% if notif_log %}
-        <table class="alert-table" style="font-size: 0.82rem;">
-            <thead>
-                <tr>
-                    <th>Date</th>
-                    <th>Canal</th>
-                    <th>Livre</th>
-                    <th>ISBN</th>
-                    <th>Prix</th>
-                    <th>Economie</th>
-                    <th>Status</th>
-                </tr>
-            </thead>
-            <tbody>
-            {% for entry in notif_log %}
-                <tr>
-                    <td style="white-space: nowrap; font-size: 0.75rem; color: var(--muted);">{{ entry.sent_at[:16] }}</td>
-                    <td>
-                        {% if entry.channel == 'discord' %}
-                        <span style="color: #5865F2;">Discord</span>
-                        {% elif entry.channel == 'email' %}
-                        <span style="color: var(--orange);">Email</span>
-                        {% else %}
-                        {{ entry.channel }}
-                        {% endif %}
-                        <small style="color: var(--muted);">({{ entry.channel_name }})</small>
-                    </td>
-                    <td>{{ (entry.title or '—')[:40] }}{% if entry.title and entry.title|length > 40 %}...{% endif %}</td>
-                    <td style="font-family: monospace; font-size: 0.75rem;">{{ entry.isbn or '—' }}</td>
-                    <td>{% if entry.price %}{{ "%.2f"|format(entry.price) }}&euro;{% else %}—{% endif %}</td>
-                    <td>
-                        {% if entry.savings %}
-                        <span class="margin-positive">+{{ "%.2f"|format(entry.savings) }}&euro;</span>
-                        {% else %}—{% endif %}
-                    </td>
-                    <td>
-                        {% if entry.success %}
-                        <span style="color: var(--green);">&#10003;</span>
-                        {% else %}
-                        <span style="color: var(--red);" title="{{ entry.error or '' }}">&#10007;</span>
-                        {% endif %}
-                    </td>
-                </tr>
-            {% endfor %}
-            </tbody>
-        </table>
-
-        <!-- Pagination -->
-        <div class="pagination" style="margin-top: 0.75rem;">
-            {% if log_page > 1 %}
-            <a href="/admin?log_page={{ log_page - 1 }}" class="btn btn-sm">&laquo; Precedent</a>
-            {% endif %}
-            <span style="color: var(--muted); font-size: 0.8rem; padding: 0.2rem 0.5rem;">
-                Page {{ log_page }} / {{ ((notif_log_total - 1) // log_per_page + 1) if notif_log_total > 0 else 1 }}
-            </span>
-            {% if notif_log|length == log_per_page %}
-            <a href="/admin?log_page={{ log_page + 1 }}" class="btn btn-sm">Suivant &raquo;</a>
-            {% endif %}
-        </div>
-        {% else %}
-        <p style="color: var(--muted); font-size: 0.85rem;">
-            Aucune notification envoyee pour le moment. L'historique apparaitra ici a chaque alerte detectee.
-        </p>
-        {% endif %}
-    </div>
 </div>
 
 {% endblock %}

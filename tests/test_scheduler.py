@@ -60,11 +60,13 @@ class TestSchedulerInit:
         assert s.max_workers == 5
         db.close()
 
-    def test_scrapers_list_has_momox_api(self, tmp_path):
+    def test_scrapers_list_has_all_platforms(self, tmp_path):
         db = Database(tmp_path / "test.db")
         s = ScanScheduler(_make_settings(), db, None)
-        assert len(s.scrapers) == 1
-        assert s.scrapers[0].platform_name == "momox_shop"
+        assert len(s.scrapers) == 2
+        platforms = [sc.platform_name for sc in s.scrapers]
+        assert "momox_shop" in platforms
+        assert "recyclivre" in platforms
         db.close()
 
 
@@ -209,7 +211,7 @@ class TestScanStatus:
     def test_initial_status(self, tmp_path):
         db = Database(tmp_path / "test.db")
         s = ScanScheduler(_make_settings(), db, None)
-        assert s.scan_status["running"] is False
-        assert s.scan_status["cycle_count"] == 0
-        assert s.scan_status["scanned_count"] == 0
+        assert s.scan_status["momox_shop"]["running"] is False
+        assert s.scan_status["momox_shop"]["cycle_count"] == 0
+        assert s.scan_status["recyclivre"]["running"] is False
         db.close()
