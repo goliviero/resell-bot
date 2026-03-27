@@ -52,11 +52,17 @@ async def dashboard(
     alerts = db.get_alerts(status=filter_status, limit=per_page, offset=offset)
     stats = db.get_alert_stats()
 
+    # Get new (unseen) alerts for the banner — only on main view (no filter)
+    new_alerts = []
+    if not filter_status and page == 1:
+        new_alerts = db.get_alerts(status=AlertStatus.NEW, limit=10)
+
     scan_overview = db.get_scan_overview("momox_shop")
     live_status = _scheduler.scan_status if _scheduler else {}
 
     return templates.TemplateResponse(request, "dashboard.html", {
         "alerts": alerts,
+        "new_alerts": new_alerts,
         "stats": stats,
         "current_status": status,
         "page": page,
@@ -161,6 +167,21 @@ async def scan_status_fragment(request: Request):
         "scan": scan_overview,
         "live": live_status,
     })
+
+
+@app.get("/bell", response_class=HTMLResponse)
+async def bell_fragment():
+    """HTMX: return bell icon content with new alert count."""
+    db = get_db()
+    stats = db.get_alert_stats()
+    new_count = stats.get("new", 0)
+    svg = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle;"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>'
+    if new_count > 0:
+        return HTMLResponse(
+            f'{svg}<span class="bell-count">{new_count}</span>',
+            headers={"HX-Reswap": "innerHTML"},
+        )
+    return HTMLResponse(svg)
 
 
 # ── Settings ──────────────────────────────────────────────

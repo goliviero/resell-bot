@@ -245,6 +245,47 @@
             border-radius: 6px;
         }
 
+        /* Notification bell */
+        .notif-bell {
+            position: relative;
+            color: var(--muted);
+            text-decoration: none;
+            margin-left: 1rem;
+            padding: 0.2rem;
+        }
+        .notif-bell:hover { color: var(--text); }
+        .notif-bell.has-new { color: var(--green); }
+        .bell-count {
+            position: absolute;
+            top: -4px;
+            right: -8px;
+            background: var(--red);
+            color: white;
+            font-size: 0.65rem;
+            font-weight: 700;
+            min-width: 16px;
+            height: 16px;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 0 4px;
+        }
+
+        /* New alerts highlight */
+        .new-alert-banner {
+            background: rgba(34,197,94,0.08);
+            border: 2px dashed var(--green);
+            border-radius: 8px;
+            padding: 1rem;
+            margin-bottom: 1.5rem;
+        }
+        .new-alert-banner h3 {
+            color: var(--green);
+            font-size: 0.9rem;
+            margin-bottom: 0.75rem;
+        }
+
         /* HTMX loading indicator */
         .htmx-indicator { opacity: 0; transition: opacity 200ms; }
         .htmx-request .htmx-indicator { opacity: 1; }
@@ -253,13 +294,23 @@
 <body>
     <header>
         <div class="container">
-            <h1><span>resell</span>-bot</h1>
-            <nav>
+            <a href="/" style="text-decoration: none; color: var(--text);">
+                <h1><span>resell</span>-bot</h1>
+            </a>
+            <nav style="display: flex; align-items: center; gap: 0;">
                 <a href="/" class="{% if active_tab == 'dashboard' %}active{% endif %}">Dashboard</a>
                 <a href="/books" class="{% if active_tab == 'books' %}active{% endif %}">Livres</a>
                 <a href="/settings" class="{% if active_tab == 'settings' %}active{% endif %}">Notifications</a>
                 <a href="/admin" class="{% if active_tab == 'admin' %}active{% endif %}">Admin</a>
-                <a href="/logout" style="color: var(--red); font-size: 0.8rem;">Deconnexion</a>
+                <a href="/?status=new" class="notif-bell" title="Nouvelles alertes"
+                   hx-get="/bell" hx-trigger="load, every 30s" hx-swap="innerHTML">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle;">
+                        <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/>
+                        <path d="M13.73 21a2 2 0 0 1-3.46 0"/>
+                    </svg>
+                    <span class="bell-count" style="display:none;"></span>
+                </a>
+                <a href="/logout" style="color: var(--muted); font-size: 0.75rem; margin-left: 0.5rem;" title="Deconnexion">&#x2716;</a>
             </nav>
         </div>
     </header>

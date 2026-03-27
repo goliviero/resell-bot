@@ -4,3 +4,4 @@
 {"ts": "2026-03-26T23:21:13", "session_id": "2026-03-26T23", "action": "feat", "detail": "Parallel scanning (3 workers, ~10 req/s, ~3 min cycle), fix Acheter 404 links, update all docs for continuous scan strategy", "result": "ok"}
 {"ts": "2026-03-27T00:13:05", "session_id": "2026-03-27T00", "action": "feat", "detail": "Tests scheduler (12) + notifier (18) + GitHub Actions CI + lockfile + stubs cleanup — 124 tests passing", "result": "ok"}
 {"ts": "2026-03-27T12:17:32", "session_id": "2026-03-27T12", "action": "feat", "detail": "Multi-webhook Discord + multi-email notifs, auth login, admin panel, Docker deploy, fix Momox 404 links — 125 tests passing", "result": "ok"}
+{"ts": "2026-03-27T12:30:35", "session_id": "2026-03-27T12", "action": "feature", "detail": "Notification bell with red badge count, new alerts banner on dashboard, fix Momox search URLs (/?query=), clickable logo, discreet logout icon", "result": "ok"}
