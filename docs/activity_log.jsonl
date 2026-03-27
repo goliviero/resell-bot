@@ -8,3 +8,4 @@
 {"ts": "2026-03-27T12:36:46", "session_id": "2026-03-27T12", "action": "feature", "detail": "HTMX auto-refresh dashboard: bell triggers refreshDashboard event, banner + stats update without F5", "result": "ok"}
 {"ts": "2026-03-27T12:54:10", "session_id": "2026-03-27T12", "action": "fix", "detail": "Momox search URL: /angebote?searchparam={isbn} (was /?query= which showed homepage). Bell click marks all seen, tab title shows alert count like CaL, banner auto-clears after 8s", "result": "ok"}
 {"ts": "2026-03-27T13:16:04", "session_id": "2026-03-27T13", "action": "feature", "detail": "Scan progress panel added to admin page (reuses scan_status.html partial, auto-refresh 5s)", "result": "ok"}
+{"ts": "2026-03-27T13:34:19", "session_id": "2026-03-27T13", "action": "feature", "detail": "Email test button, SMTP password encryption (Fernet), reset alert status button, Discord-only daily digest, fix broken scheduler digest call", "result": "ok"}

@@ -37,7 +37,6 @@
                     hx-post="/alert/{{ alert.id }}/status/bought"
                     hx-target="#alert-{{ alert.id }}"
                     hx-swap="outerHTML"
-                    hx-trigger="click"
                     title="Marquer comme achete">&#10003;</button>
             {% endif %}
             {% if alert.status != 'ignored' %}
@@ -45,8 +44,14 @@
                     hx-post="/alert/{{ alert.id }}/status/ignored"
                     hx-target="#alert-{{ alert.id }}"
                     hx-swap="outerHTML"
-                    hx-trigger="click"
                     title="Ignorer">&times;</button>
+            {% endif %}
+            {% if alert.status in ('bought', 'ignored') %}
+            <button class="btn btn-sm" style="color: var(--blue);"
+                    hx-post="/alert/{{ alert.id }}/status/seen"
+                    hx-target="#alert-{{ alert.id }}"
+                    hx-swap="outerHTML"
+                    title="Remettre en vue">&#8634;</button>
             {% endif %}
         </div>
     </td>

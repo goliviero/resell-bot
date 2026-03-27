@@ -1,13 +1,16 @@
 """Multi-channel notification hub — Discord webhooks + Email SMTP.
 
-Supports multiple independent Discord webhooks and email configs.
+Routing:
+- Instant alerts → Discord + Email (1 email per alert)
+- Daily digest  → Discord only (recap of active deals at 08:00)
+
 Each channel is stored in its own DB table and can be toggled independently.
 """
 
 import logging
 
 from resell_bot.core.discord_notifier import send_discord_alert, send_discord_digest
-from resell_bot.core.email_notifier import send_email_alert, send_email_digest
+from resell_bot.core.email_notifier import send_email_alert
 from resell_bot.core.models import Alert
 
 logger = logging.getLogger(__name__)
@@ -51,7 +54,7 @@ class Notifier:
         return channels
 
     async def send_alert(self, alert: Alert) -> bool:
-        """Send a deal alert to all enabled channels. Returns True if at least one succeeded."""
+        """Send a deal alert to Discord + Email. Returns True if at least one succeeded."""
         self.reload_channels()
         results = []
 
@@ -70,8 +73,8 @@ class Notifier:
 
         return any(results)
 
-    async def send_digest(self, deals: list[dict]) -> bool:
-        """Send daily digest to all enabled channels. Returns True if at least one succeeded."""
+    async def send_daily_digest(self, deals: list[dict]) -> bool:
+        """Send daily digest to Discord ONLY (no email recap). Returns True if succeeded."""
         if not deals:
             logger.info("No deals for daily digest — skipping")
             return True
@@ -81,11 +84,5 @@ class Notifier:
 
         for wh in self._discord_webhooks:
             results.append(await send_discord_digest(wh["url"], deals))
-
-        for ec in self._email_configs:
-            results.append(send_email_digest(
-                ec["smtp_host"], ec["smtp_port"], ec["smtp_user"], ec["smtp_password"],
-                ec["email_to"], deals, bool(ec["smtp_use_tls"]),
-            ))
 
         return any(results) if results else False

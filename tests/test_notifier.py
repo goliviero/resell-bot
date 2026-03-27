@@ -127,7 +127,7 @@ class TestNotifierDigest:
     async def test_empty_digest_returns_true(self, tmp_path):
         db = Database(tmp_path / "test.db")
         n = Notifier(db)
-        result = await n.send_digest([])
+        result = await n.send_daily_digest([])
         assert result is True
         db.close()
 
@@ -137,7 +137,7 @@ class TestNotifierDigest:
         db.add_discord_webhook("wh1", "https://discord.com/api/webhooks/111/aaa")
         n = Notifier(db)
         deals = [{"title": "Book", "momox_price": 5.0, "max_buy_price": 50.0, "savings": 45.0, "isbn": "123"}]
-        result = await n.send_digest(deals)
+        result = await n.send_daily_digest(deals)
         assert result is True
         mock_digest.assert_called_once()
         db.close()

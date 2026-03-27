@@ -136,6 +136,10 @@
                     </td>
                     <td>
                         <div class="actions">
+                            <button class="btn btn-sm"
+                                    hx-post="/settings/email/{{ ec.id }}/test"
+                                    hx-target="#email-test-{{ ec.id }}"
+                                    hx-swap="innerHTML">Tester</button>
                             <form method="post" action="/settings/email/{{ ec.id }}/toggle" style="display:inline;">
                                 <button type="submit" class="btn btn-sm">
                                     {{ 'Desactiver' if ec.enabled else 'Activer' }}
@@ -146,6 +150,7 @@
                                 <button type="submit" class="btn btn-sm" style="color: var(--red);">Supprimer</button>
                             </form>
                         </div>
+                        <span id="email-test-{{ ec.id }}" style="font-size: 0.75rem; margin-top: 0.3rem; display: block;"></span>
                     </td>
                 </tr>
             {% endfor %}

@@ -5,6 +5,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 from resell_bot.core.models import Alert, AlertStatus, Listing, ReferencePrice
+from resell_bot.utils.crypto import decrypt, encrypt
 
 DB_SCHEMA = """
 CREATE TABLE IF NOT EXISTS listings (
@@ -626,25 +627,28 @@ class Database:
         self, label: str, email_to: str, smtp_host: str, smtp_port: int,
         smtp_user: str, smtp_password: str, smtp_use_tls: bool = True,
     ) -> int:
-        """Add an email notification config. Returns its ID."""
+        """Add an email notification config. Password is encrypted at rest."""
         now = datetime.now().isoformat()
         cursor = self.conn.execute(
             """INSERT INTO email_configs
                (label, email_to, smtp_host, smtp_port, smtp_user, smtp_password, smtp_use_tls, enabled, created_at)
                VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?)""",
-            (label, email_to, smtp_host, smtp_port, smtp_user, smtp_password, int(smtp_use_tls), now),
+            (label, email_to, smtp_host, smtp_port, smtp_user, encrypt(smtp_password), int(smtp_use_tls), now),
         )
         self.conn.commit()
         return cursor.lastrowid  # type: ignore[return-value]
 
     def get_email_configs(self, enabled_only: bool = False) -> list[dict]:
-        """Get all email configs."""
+        """Get all email configs. Passwords are decrypted transparently."""
         query = "SELECT * FROM email_configs"
         if enabled_only:
             query += " WHERE enabled = 1"
         query += " ORDER BY created_at DESC"
         rows = self.conn.execute(query).fetchall()
-        return [dict(r) for r in rows]
+        configs = [dict(r) for r in rows]
+        for c in configs:
+            c["smtp_password"] = decrypt(c["smtp_password"])
+        return configs
 
     def delete_email_config(self, config_id: int) -> bool:
         """Delete an email config. Returns True if found."""

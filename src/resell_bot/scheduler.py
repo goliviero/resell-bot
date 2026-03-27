@@ -259,10 +259,9 @@ class ScanScheduler:
             )
 
     async def send_daily_digest(self) -> None:
-        """Send daily recap of all currently available deals."""
-        if self.notifier:
-            settings = self.db.get_all_notification_settings()
-            self.notifier.configure_from_settings(settings)
+        """Send daily recap of active deals to Discord only."""
+        if not self.notifier:
+            return
 
         deals = self.db.get_available_deals()
         if not deals:
@@ -270,8 +269,7 @@ class ScanScheduler:
             return
 
         logger.info("Daily digest: %d deals to send", len(deals))
-        if self.notifier:
-            await self.notifier.send_digest(deals)
+        await self.notifier.send_daily_digest(deals)
 
     def start(self) -> None:
         """Start the daily digest scheduler (continuous scan runs separately)."""

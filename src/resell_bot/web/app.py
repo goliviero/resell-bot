@@ -321,6 +321,26 @@ async def delete_email_config(config_id: int):
     return RedirectResponse("/settings?msg=Config+email+supprimee", status_code=303)
 
 
+@app.post("/settings/email/{config_id}/test", response_class=HTMLResponse)
+async def test_email_config(config_id: int):
+    """Send a test email to verify SMTP config works."""
+    db = get_db()
+    configs = db.get_email_configs()
+    config = next((c for c in configs if c["id"] == config_id), None)
+    if not config:
+        return HTMLResponse('<span style="color: var(--red);">Config introuvable</span>')
+
+    from resell_bot.core.email_notifier import send_test_email
+    ok = send_test_email(
+        config["smtp_host"], config["smtp_port"],
+        config["smtp_user"], config["smtp_password"],
+        config["email_to"], bool(config["smtp_use_tls"]),
+    )
+    if ok:
+        return HTMLResponse('<span style="color: var(--green);">Email envoye!</span>')
+    return HTMLResponse('<span style="color: var(--red);">Echec — verifiez les parametres SMTP</span>')
+
+
 @app.post("/settings/email/{config_id}/toggle")
 async def toggle_email_config(config_id: int):
     """Toggle an email config on/off."""

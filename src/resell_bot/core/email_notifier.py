@@ -74,6 +74,45 @@ def _build_digest_html(deals: list[dict]) -> str:
     """
 
 
+def send_test_email(
+    smtp_host: str,
+    smtp_port: int,
+    smtp_user: str,
+    smtp_password: str,
+    to_email: str,
+    use_tls: bool = True,
+) -> bool:
+    """Send a simple test email to verify SMTP config. Returns True on success."""
+    msg = MIMEMultipart("alternative")
+    msg["Subject"] = "Test resell-bot — Email OK!"
+    msg["From"] = smtp_user
+    msg["To"] = to_email
+
+    html = """
+    <div style="font-family:sans-serif; max-width:500px; margin:0 auto; background:#1a1d27; color:#e1e4ed; padding:20px; border-radius:8px; text-align:center;">
+        <h2 style="color:#22c55e;">resell-bot</h2>
+        <p>Les notifications email fonctionnent correctement.</p>
+        <p style="color:#888; font-size:12px; margin-top:15px;">Ce message est un test automatique.</p>
+    </div>
+    """
+    msg.attach(MIMEText(html, "html"))
+
+    try:
+        if use_tls:
+            server = smtplib.SMTP(smtp_host, smtp_port, timeout=15)
+            server.starttls()
+        else:
+            server = smtplib.SMTP_SSL(smtp_host, smtp_port, timeout=15)
+        server.login(smtp_user, smtp_password)
+        server.sendmail(smtp_user, to_email, msg.as_string())
+        server.quit()
+        logger.info("Test email sent to %s", to_email)
+        return True
+    except Exception as e:
+        logger.error("Test email failed: %s", e)
+        return False
+
+
 def send_email_alert(
     smtp_host: str,
     smtp_port: int,
