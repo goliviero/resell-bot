@@ -9,11 +9,13 @@ from fastapi.templating import Jinja2Templates
 from resell_bot.core.buyer import BuyStep, get_all_jobs, get_job, start_buy
 from resell_bot.core.database import Database
 from resell_bot.core.models import AlertStatus
+from resell_bot.web.auth import setup_auth
 
 TEMPLATES_DIR = Path(__file__).parent / "templates"
 
 app = FastAPI(title="resell-bot dashboard")
 templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
+setup_auth(app)
 
 # Database + scheduler instances — set at startup via configure()
 _db: Database | None = None
@@ -163,59 +165,76 @@ async def scan_status_fragment(request: Request):
 
 # ── Settings ──────────────────────────────────────────────
 
-@app.get("/settings", response_class=HTMLResponse)
-async def settings_page(request: Request, saved: str | None = None):
-    """Notification settings page."""
-    db = get_db()
-    settings = db.get_all_notification_settings()
-    return templates.TemplateResponse(request, "settings.html", {
-        "settings": settings,
-        "saved": saved == "1",
+def _settings_ctx(db, message: str = "", error: str = "") -> dict:
+    """Build template context for the settings page."""
+    return {
+        "discord_webhooks": db.get_discord_webhooks(),
+        "email_configs": db.get_email_configs(),
+        "message": message,
+        "error": error,
         "active_tab": "settings",
-    })
-
-
-@app.post("/settings", response_class=HTMLResponse)
-async def save_settings(
-    request: Request,
-    discord_webhook_url: str = Form(""),
-    email_to: str = Form(""),
-    smtp_host: str = Form(""),
-    smtp_port: str = Form("587"),
-    smtp_user: str = Form(""),
-    smtp_password: str = Form(""),
-):
-    """Save notification settings."""
-    db = get_db()
-
-    fields = {
-        "discord_webhook_url": discord_webhook_url.strip(),
-        "email_to": email_to.strip(),
-        "smtp_host": smtp_host.strip(),
-        "smtp_port": smtp_port.strip(),
-        "smtp_user": smtp_user.strip(),
-        "smtp_password": smtp_password.strip(),
     }
 
-    for key, value in fields.items():
-        if value:
-            db.set_notification_setting(key, value)
-        else:
-            db.delete_notification_setting(key)
 
-    return RedirectResponse("/settings?saved=1", status_code=303)
+@app.get("/settings", response_class=HTMLResponse)
+async def settings_page(request: Request, msg: str | None = None):
+    """Notification settings page — list all webhooks + emails."""
+    db = get_db()
+    return templates.TemplateResponse(request, "settings.html", _settings_ctx(db, message=msg or ""))
 
 
-@app.post("/settings/test-discord", response_class=HTMLResponse)
-async def test_discord(request: Request, discord_webhook_url: str = Form("")):
-    """Send a test message to Discord webhook (reads URL from form, not DB)."""
-    webhook_url = discord_webhook_url.strip()
+@app.post("/settings/discord/add", response_class=HTMLResponse)
+async def add_discord_webhook(
+    request: Request,
+    name: str = Form(...),
+    url: str = Form(...),
+):
+    """Add a new Discord webhook."""
+    db = get_db()
+    name, url = name.strip(), url.strip()
+    if not url.startswith("https://discord.com/api/webhooks/"):
+        return templates.TemplateResponse(request, "settings.html",
+            _settings_ctx(db, error="URL invalide — doit commencer par https://discord.com/api/webhooks/"))
+    try:
+        db.add_discord_webhook(name or "Discord", url)
+    except Exception:
+        return templates.TemplateResponse(request, "settings.html",
+            _settings_ctx(db, error="Ce webhook existe deja."))
+    return RedirectResponse("/settings?msg=Webhook+Discord+ajoute!", status_code=303)
+
+
+@app.post("/settings/discord/{wh_id}/delete")
+async def delete_discord_webhook(wh_id: int):
+    """Delete a Discord webhook."""
+    get_db().delete_discord_webhook(wh_id)
+    return RedirectResponse("/settings?msg=Webhook+supprime", status_code=303)
+
+
+@app.post("/settings/discord/{wh_id}/toggle")
+async def toggle_discord_webhook(wh_id: int):
+    """Toggle a Discord webhook on/off."""
+    db = get_db()
+    # Read current state, flip it
+    webhooks = db.get_discord_webhooks()
+    for wh in webhooks:
+        if wh["id"] == wh_id:
+            db.toggle_discord_webhook(wh_id, not wh["enabled"])
+            break
+    return RedirectResponse("/settings", status_code=303)
+
+
+@app.post("/settings/discord/{wh_id}/test", response_class=HTMLResponse)
+async def test_discord_webhook(wh_id: int):
+    """Send a test message to a specific Discord webhook."""
+    db = get_db()
+    webhooks = db.get_discord_webhooks()
+    webhook_url = None
+    for wh in webhooks:
+        if wh["id"] == wh_id:
+            webhook_url = wh["url"]
+            break
     if not webhook_url:
-        # Fallback to DB
-        db = get_db()
-        webhook_url = db.get_notification_setting("discord_webhook_url")
-    if not webhook_url:
-        return HTMLResponse('<span style="color: var(--red);">Webhook non configure</span>')
+        return HTMLResponse('<span style="color: var(--red);">Webhook introuvable</span>')
 
     import httpx
     payload = {"content": "Test resell-bot — Discord OK!"}
@@ -227,6 +246,133 @@ async def test_discord(request: Request, discord_webhook_url: str = Form("")):
             return HTMLResponse(f'<span style="color: var(--red);">Erreur {resp.status_code}</span>')
     except Exception as e:
         return HTMLResponse(f'<span style="color: var(--red);">{e}</span>')
+
+
+@app.post("/settings/email/add", response_class=HTMLResponse)
+async def add_email_config(
+    request: Request,
+    label: str = Form(...),
+    email_to: str = Form(...),
+    smtp_host: str = Form(...),
+    smtp_port: int = Form(587),
+    smtp_user: str = Form(...),
+    smtp_password: str = Form(...),
+):
+    """Add a new email notification config."""
+    db = get_db()
+    db.add_email_config(
+        label=label.strip() or "Email",
+        email_to=email_to.strip(),
+        smtp_host=smtp_host.strip(),
+        smtp_port=smtp_port,
+        smtp_user=smtp_user.strip(),
+        smtp_password=smtp_password.strip(),
+    )
+    return RedirectResponse("/settings?msg=Config+email+ajoutee!", status_code=303)
+
+
+@app.post("/settings/email/{config_id}/delete")
+async def delete_email_config(config_id: int):
+    """Delete an email config."""
+    get_db().delete_email_config(config_id)
+    return RedirectResponse("/settings?msg=Config+email+supprimee", status_code=303)
+
+
+@app.post("/settings/email/{config_id}/toggle")
+async def toggle_email_config(config_id: int):
+    """Toggle an email config on/off."""
+    db = get_db()
+    configs = db.get_email_configs()
+    for ec in configs:
+        if ec["id"] == config_id:
+            db.toggle_email_config(config_id, not ec["enabled"])
+            break
+    return RedirectResponse("/settings", status_code=303)
+
+
+# ── Admin ─────────────────────────────────────────────────────
+
+@app.get("/admin", response_class=HTMLResponse)
+async def admin_page(request: Request, msg: str | None = None):
+    """Admin control panel."""
+    db = get_db()
+    from resell_bot.core.notifier import Notifier
+    notifier = Notifier(db)
+    notifier.reload_channels()
+    scan_overview = db.get_scan_overview("momox_shop")
+    stats = db.get_alert_stats()
+    live_status = _scheduler.scan_status if _scheduler else {}
+    return templates.TemplateResponse(request, "admin.html", {
+        "scan": scan_overview,
+        "live": live_status,
+        "alerts_total": stats.get("total", 0),
+        "notif_channels": notifier.get_status_summary(),
+        "message": msg or "",
+        "active_tab": "admin",
+    })
+
+
+@app.get("/admin/scan-info", response_class=HTMLResponse)
+async def admin_scan_info(request: Request):
+    """HTMX fragment: live scan stats for admin page."""
+    live = _scheduler.scan_status if _scheduler else {}
+    return HTMLResponse(f"""
+    <div class="scan-stat">
+        <div style="font-size: 1.4rem; font-weight: 700; color: var(--accent);">{live.get('cycle_count', 0)}</div>
+        <div style="font-size: 0.7rem; color: var(--muted);">CYCLES</div>
+    </div>
+    <div class="scan-stat">
+        <div style="font-size: 1.4rem; font-weight: 700;">{live.get('scanned_count', 0)} / {live.get('total_count', 0)}</div>
+        <div style="font-size: 0.7rem; color: var(--muted);">ISBNs SCANNES</div>
+    </div>
+    <div class="scan-stat">
+        <div style="font-size: 1.4rem; font-weight: 700; color: var(--green);">{live.get('deals_found', 0)}</div>
+        <div style="font-size: 0.7rem; color: var(--muted);">DEALS CE CYCLE</div>
+    </div>
+    <div class="scan-stat">
+        <div style="font-size: 1.4rem; font-weight: 700;">
+            {'%.0fs' % live['last_cycle_duration'] if live.get('last_cycle_duration') else '—'}
+        </div>
+        <div style="font-size: 0.7rem; color: var(--muted);">DERNIER CYCLE</div>
+    </div>
+    """)
+
+
+@app.post("/admin/scan/stop")
+async def admin_scan_stop():
+    """Stop the continuous scanner."""
+    if _scheduler:
+        _scheduler._running = False
+    return RedirectResponse("/admin?msg=Scanner+arrete", status_code=303)
+
+
+@app.post("/admin/scan/start")
+async def admin_scan_start():
+    """Restart the continuous scanner in background."""
+    if _scheduler and not _scheduler._running:
+        import asyncio
+        _scheduler._running = True
+        asyncio.get_event_loop().create_task(_scheduler.run_continuous())
+    return RedirectResponse("/admin?msg=Scanner+demarre", status_code=303)
+
+
+@app.post("/admin/scan/once")
+async def admin_scan_once():
+    """Trigger a single manual scan."""
+    if _scheduler:
+        import asyncio
+        _scheduler._running = True
+        asyncio.get_event_loop().create_task(_scheduler.run_once())
+    return RedirectResponse("/admin?msg=Scan+manuel+lance", status_code=303)
+
+
+@app.post("/admin/clear-alerts")
+async def admin_clear_alerts():
+    """Delete all alerts."""
+    db = get_db()
+    db.conn.execute("DELETE FROM alerts")
+    db.conn.commit()
+    return RedirectResponse("/admin?msg=Alertes+supprimees", status_code=303)
 
 
 # ── Buy Flow ─────────────────────────────────────────────────

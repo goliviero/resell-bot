@@ -1,0 +1,119 @@
+{% extends "base.html" %}
+{% block title %}Admin{% endblock %}
+{% block content %}
+
+{% if message %}
+<div style="background: rgba(34,197,94,0.15); border: 1px solid var(--green); border-radius: 8px; padding: 0.75rem 1.25rem; margin-bottom: 1.5rem; color: var(--green);">
+    {{ message }}
+</div>
+{% endif %}
+
+<div style="max-width: 800px;">
+    <h2 style="margin-bottom: 0.5rem;">Administration</h2>
+    <p style="color: var(--muted); margin-bottom: 1.5rem; font-size: 0.85rem;">
+        Controle du scanner et maintenance. Les actions sont immediates.
+    </p>
+
+    <!-- ── Scanner Control ────────────────────────────────── -->
+    <div class="settings-section">
+        <div class="settings-header">
+            <h3>Scanner</h3>
+            {% if live.get('running') %}
+            <span class="badge badge-new">En cours</span>
+            {% else %}
+            <span class="badge badge-ignored">Arrete</span>
+            {% endif %}
+        </div>
+
+        <!-- Live status -->
+        <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.75rem; margin-bottom: 1rem;"
+             hx-get="/admin/scan-info" hx-trigger="every 5s" hx-swap="innerHTML" id="scan-live">
+            <div class="scan-stat">
+                <div style="font-size: 1.4rem; font-weight: 700; color: var(--accent);">{{ live.get('cycle_count', 0) }}</div>
+                <div style="font-size: 0.7rem; color: var(--muted);">CYCLES</div>
+            </div>
+            <div class="scan-stat">
+                <div style="font-size: 1.4rem; font-weight: 700;">{{ live.get('scanned_count', 0) }} / {{ live.get('total_count', 0) }}</div>
+                <div style="font-size: 0.7rem; color: var(--muted);">ISBNs SCANNES</div>
+            </div>
+            <div class="scan-stat">
+                <div style="font-size: 1.4rem; font-weight: 700; color: var(--green);">{{ live.get('deals_found', 0) }}</div>
+                <div style="font-size: 0.7rem; color: var(--muted);">DEALS CE CYCLE</div>
+            </div>
+            <div class="scan-stat">
+                <div style="font-size: 1.4rem; font-weight: 700;">
+                    {% if live.get('last_cycle_duration') %}
+                    {{ '%.0f'|format(live.last_cycle_duration) }}s
+                    {% else %}—{% endif %}
+                </div>
+                <div style="font-size: 0.7rem; color: var(--muted);">DERNIER CYCLE</div>
+            </div>
+        </div>
+
+        <div class="actions" style="gap: 0.75rem;">
+            {% if live.get('running') %}
+            <form method="post" action="/admin/scan/stop" style="display:inline;">
+                <button type="submit" class="btn" style="background: var(--red); color: white; border-color: var(--red);">
+                    Arreter le scan
+                </button>
+            </form>
+            {% else %}
+            <form method="post" action="/admin/scan/start" style="display:inline;">
+                <button type="submit" class="btn" style="background: var(--green); color: white; border-color: var(--green);">
+                    Demarrer le scan continu
+                </button>
+            </form>
+            {% endif %}
+            <form method="post" action="/admin/scan/once" style="display:inline;">
+                <button type="submit" class="btn">
+                    Lancer 1 scan manuel
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <!-- ── System Info ────────────────────────────────────── -->
+    <div class="settings-section">
+        <div class="settings-header">
+            <h3>Systeme</h3>
+        </div>
+        <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.75rem; margin-bottom: 1rem;">
+            <div class="scan-stat">
+                <div style="font-size: 1.4rem; font-weight: 700;">{{ scan.total_watchlist }}</div>
+                <div style="font-size: 0.7rem; color: var(--muted);">ISBNs WATCHLIST</div>
+            </div>
+            <div class="scan-stat">
+                <div style="font-size: 1.4rem; font-weight: 700; color: var(--green);">{{ scan.available }}</div>
+                <div style="font-size: 0.7rem; color: var(--muted);">DISPONIBLES</div>
+            </div>
+            <div class="scan-stat">
+                <div style="font-size: 1.4rem; font-weight: 700;">{{ alerts_total }}</div>
+                <div style="font-size: 0.7rem; color: var(--muted);">ALERTES TOTAL</div>
+            </div>
+        </div>
+        <div style="font-size: 0.8rem; color: var(--muted);">
+            <p>Notifications actives: <strong style="color: var(--text);">{{ notif_channels|join(', ') or 'Aucune' }}</strong></p>
+            <p>Dernier scan: <strong style="color: var(--text);">{{ scan.last_scan_at or 'Jamais' }}</strong></p>
+        </div>
+    </div>
+
+    <!-- ── Danger Zone ────────────────────────────────────── -->
+    <div class="settings-section" style="border-color: rgba(239,68,68,0.3);">
+        <div class="settings-header">
+            <h3 style="color: var(--red);">Zone dangereuse</h3>
+        </div>
+        <p style="color: var(--muted); font-size: 0.8rem; margin-bottom: 0.75rem;">
+            Ces actions sont irreversibles.
+        </p>
+        <div class="actions" style="gap: 0.75rem;">
+            <form method="post" action="/admin/clear-alerts" style="display:inline;"
+                  onsubmit="return confirm('Supprimer TOUTES les alertes ?')">
+                <button type="submit" class="btn btn-sm" style="color: var(--red);">
+                    Vider les alertes
+                </button>
+            </form>
+        </div>
+    </div>
+</div>
+
+{% endblock %}

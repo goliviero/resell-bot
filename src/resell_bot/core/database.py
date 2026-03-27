@@ -60,6 +60,27 @@ CREATE TABLE IF NOT EXISTS notification_settings (
     updated_at TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS discord_webhooks (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    url TEXT NOT NULL UNIQUE,
+    enabled INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS email_configs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    label TEXT NOT NULL,
+    email_to TEXT NOT NULL,
+    smtp_host TEXT NOT NULL,
+    smtp_port INTEGER NOT NULL DEFAULT 587,
+    smtp_user TEXT NOT NULL,
+    smtp_password TEXT NOT NULL,
+    smtp_use_tls INTEGER NOT NULL DEFAULT 1,
+    enabled INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL
+);
+
 CREATE INDEX IF NOT EXISTS idx_listings_isbn ON listings(isbn);
 CREATE INDEX IF NOT EXISTS idx_listings_url ON listings(url);
 CREATE INDEX IF NOT EXISTS idx_alerts_listing_url ON alerts(listing_url);
@@ -554,6 +575,81 @@ class Database:
                ORDER BY savings DESC"""
         ).fetchall()
         return [dict(r) for r in rows]
+
+    # ── Discord Webhooks ─────────────────────────────────────
+
+    def add_discord_webhook(self, name: str, url: str) -> int:
+        """Add a Discord webhook. Returns its ID."""
+        now = datetime.now().isoformat()
+        cursor = self.conn.execute(
+            "INSERT INTO discord_webhooks (name, url, enabled, created_at) VALUES (?, ?, 1, ?)",
+            (name, url, now),
+        )
+        self.conn.commit()
+        return cursor.lastrowid  # type: ignore[return-value]
+
+    def get_discord_webhooks(self, enabled_only: bool = False) -> list[dict]:
+        """Get all Discord webhooks."""
+        query = "SELECT * FROM discord_webhooks"
+        if enabled_only:
+            query += " WHERE enabled = 1"
+        query += " ORDER BY created_at DESC"
+        rows = self.conn.execute(query).fetchall()
+        return [dict(r) for r in rows]
+
+    def delete_discord_webhook(self, webhook_id: int) -> bool:
+        """Delete a Discord webhook. Returns True if found."""
+        cursor = self.conn.execute("DELETE FROM discord_webhooks WHERE id = ?", (webhook_id,))
+        self.conn.commit()
+        return cursor.rowcount > 0
+
+    def toggle_discord_webhook(self, webhook_id: int, enabled: bool) -> bool:
+        """Enable or disable a Discord webhook."""
+        cursor = self.conn.execute(
+            "UPDATE discord_webhooks SET enabled = ? WHERE id = ?", (int(enabled), webhook_id),
+        )
+        self.conn.commit()
+        return cursor.rowcount > 0
+
+    # ── Email Configs ────────────────────────────────────────
+
+    def add_email_config(
+        self, label: str, email_to: str, smtp_host: str, smtp_port: int,
+        smtp_user: str, smtp_password: str, smtp_use_tls: bool = True,
+    ) -> int:
+        """Add an email notification config. Returns its ID."""
+        now = datetime.now().isoformat()
+        cursor = self.conn.execute(
+            """INSERT INTO email_configs
+               (label, email_to, smtp_host, smtp_port, smtp_user, smtp_password, smtp_use_tls, enabled, created_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?)""",
+            (label, email_to, smtp_host, smtp_port, smtp_user, smtp_password, int(smtp_use_tls), now),
+        )
+        self.conn.commit()
+        return cursor.lastrowid  # type: ignore[return-value]
+
+    def get_email_configs(self, enabled_only: bool = False) -> list[dict]:
+        """Get all email configs."""
+        query = "SELECT * FROM email_configs"
+        if enabled_only:
+            query += " WHERE enabled = 1"
+        query += " ORDER BY created_at DESC"
+        rows = self.conn.execute(query).fetchall()
+        return [dict(r) for r in rows]
+
+    def delete_email_config(self, config_id: int) -> bool:
+        """Delete an email config. Returns True if found."""
+        cursor = self.conn.execute("DELETE FROM email_configs WHERE id = ?", (config_id,))
+        self.conn.commit()
+        return cursor.rowcount > 0
+
+    def toggle_email_config(self, config_id: int, enabled: bool) -> bool:
+        """Enable or disable an email config."""
+        cursor = self.conn.execute(
+            "UPDATE email_configs SET enabled = ? WHERE id = ?", (int(enabled), config_id),
+        )
+        self.conn.commit()
+        return cursor.rowcount > 0
 
     # ── Cleanup ───────────────────────────────────────────────
 

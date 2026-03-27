@@ -2,20 +2,16 @@
 
 import asyncio
 import logging
-import os
 import sys
 import threading
 from pathlib import Path
 
 import uvicorn
 import yaml
-from dotenv import load_dotenv
 
 from resell_bot.core.database import Database
 from resell_bot.core.notifier import Notifier
 from resell_bot.scheduler import ScanScheduler
-
-load_dotenv()
 
 # Project root: two levels up from src/resell_bot/main.py
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
@@ -69,26 +65,15 @@ def main() -> None:
     db_path = PROJECT_ROOT / settings.get("database", {}).get("path", "data/resell_bot.db")
     db = Database(db_path)
 
-    # Notifier — always created, channels configured dynamically
-    bot_token = os.getenv("TELEGRAM_BOT_TOKEN")
-    chat_id = os.getenv("TELEGRAM_CHAT_ID")
-    notifier = Notifier(bot_token, chat_id)
+    # Notifier — loads channels from DB tables
+    notifier = Notifier(db)
+    notifier.reload_channels()
 
-    # Load Discord/Email settings from DB
-    notif_settings = db.get_all_notification_settings()
-    notifier.configure_from_settings(notif_settings)
-
-    channels = []
-    if notifier.telegram_enabled:
-        channels.append("Telegram")
-    if notifier.discord_enabled:
-        channels.append("Discord")
-    if notifier.email_enabled:
-        channels.append("Email")
+    channels = notifier.get_status_summary()
     if channels:
         logger.info("Notifications enabled: %s", ", ".join(channels))
     else:
-        logger.warning("No notification channels configured")
+        logger.warning("No notification channels configured — use dashboard /settings to add")
 
     # Dashboard mode only
     if "--dashboard" in sys.argv:

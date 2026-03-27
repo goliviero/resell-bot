@@ -3,3 +3,4 @@
 {"ts": "2026-03-26T23:07:43", "session_id": "2026-03-26T23", "action": "feat", "detail": "Continuous scan mode: sequential loop scanning all 1380 ISBNs at ~1 req/s, ~23 min cycle, dashboard scan status panel adapted", "result": "ok"}
 {"ts": "2026-03-26T23:21:13", "session_id": "2026-03-26T23", "action": "feat", "detail": "Parallel scanning (3 workers, ~10 req/s, ~3 min cycle), fix Acheter 404 links, update all docs for continuous scan strategy", "result": "ok"}
 {"ts": "2026-03-27T00:13:05", "session_id": "2026-03-27T00", "action": "feat", "detail": "Tests scheduler (12) + notifier (18) + GitHub Actions CI + lockfile + stubs cleanup — 124 tests passing", "result": "ok"}
+{"ts": "2026-03-27T12:17:32", "session_id": "2026-03-27T12", "action": "feat", "detail": "Multi-webhook Discord + multi-email notifs, auth login, admin panel, Docker deploy, fix Momox 404 links — 125 tests passing", "result": "ok"}

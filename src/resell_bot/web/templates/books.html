@@ -127,12 +127,12 @@
                 {% endif %}
             </td>
             <td class="actions">
-                {% set momox_link = book.momox_url if book.momox_url else "https://www.momox-shop.fr/recherche/" ~ book.isbn %}
+                {% set search_link = "https://www.momox-shop.fr/recherche?query=" ~ book.isbn %}
+                {% set momox_link = book.momox_url if book.momox_url else search_link %}
                 {% if book.momox_status == 'available' and book.momox_price is not none %}
                 <a href="{{ momox_link }}" target="_blank" class="btn btn-buy btn-sm" style="text-decoration:none;">Acheter</a>
-                {% else %}
-                <a href="{{ momox_link }}" target="_blank" class="btn btn-sm" style="text-decoration:none;">Momox</a>
                 {% endif %}
+                <a href="{{ search_link }}" target="_blank" class="btn btn-sm" style="text-decoration:none;">Momox</a>
                 {% if book.cal_url %}
                 <a href="{{ book.cal_url }}" target="_blank" class="btn btn-sm" style="text-decoration:none;">CaL</a>
                 {% endif %}

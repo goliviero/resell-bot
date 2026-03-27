@@ -114,11 +114,6 @@ class ScanScheduler:
             if self.db.was_recently_alerted(alert.listing.url, self.cooldown_hours):
                 return
 
-            # Reload notification settings (user may change via dashboard)
-            if self.notifier:
-                settings = self.db.get_all_notification_settings()
-                self.notifier.configure_from_settings(settings)
-
             self.db.save_alert(alert)
             if self.notifier:
                 await self.notifier.send_alert(alert)

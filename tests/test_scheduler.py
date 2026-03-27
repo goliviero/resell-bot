@@ -173,8 +173,6 @@ class TestProcessAlert:
         mock_notifier = AsyncMock()
         mock_notifier.send_alert = AsyncMock(return_value=True)
         s = ScanScheduler(_make_settings(), db, mock_notifier)
-        # Mock get_all_notification_settings to avoid DB call
-        db.get_all_notification_settings = MagicMock(return_value={})
 
         listing = _make_listing()
         db.save_listing(listing)

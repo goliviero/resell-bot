@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>resell-bot — {% block title %}Dashboard{% endblock %}</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🤖</text></svg>">
     <script src="https://unpkg.com/htmx.org@2.0.4"></script>
     <style>
         :root {
@@ -257,6 +258,8 @@
                 <a href="/" class="{% if active_tab == 'dashboard' %}active{% endif %}">Dashboard</a>
                 <a href="/books" class="{% if active_tab == 'books' %}active{% endif %}">Livres</a>
                 <a href="/settings" class="{% if active_tab == 'settings' %}active{% endif %}">Notifications</a>
+                <a href="/admin" class="{% if active_tab == 'admin' %}active{% endif %}">Admin</a>
+                <a href="/logout" style="color: var(--red); font-size: 0.8rem;">Deconnexion</a>
             </nav>
         </div>
     </header>
