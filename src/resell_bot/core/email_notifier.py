@@ -46,7 +46,7 @@ def _build_digest_html(deals: list[dict]) -> str:
             <td style="padding:6px 10px; font-weight:bold;">{d['momox_price']:.2f} EUR</td>
             <td style="padding:6px 10px;">{d['max_buy_price']:.2f} EUR</td>
             <td style="padding:6px 10px; color:#22c55e; font-weight:bold;">+{savings:.2f} EUR</td>
-            <td style="padding:6px 10px;"><a href="https://www.momox-shop.fr/?query={isbn}" style="color:#6c63ff;">Acheter</a></td>
+            <td style="padding:6px 10px;"><a href="https://www.momox-shop.fr/angebote?searchparam={isbn}" style="color:#6c63ff;">Acheter</a></td>
         </tr>
         """
 

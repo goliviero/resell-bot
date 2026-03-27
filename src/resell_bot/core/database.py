@@ -235,6 +235,15 @@ class Database:
         self.conn.commit()
         return cursor.rowcount > 0
 
+    def mark_all_new_as_seen(self) -> int:
+        """Mark all NEW alerts as SEEN. Returns number of alerts updated."""
+        cursor = self.conn.execute(
+            "UPDATE alerts SET status = ? WHERE status = ?",
+            (AlertStatus.SEEN.value, AlertStatus.NEW.value),
+        )
+        self.conn.commit()
+        return cursor.rowcount
+
     def get_alert_stats(self) -> dict:
         """Count alerts by status."""
         rows = self.conn.execute(

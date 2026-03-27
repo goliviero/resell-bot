@@ -1,5 +1,7 @@
 {% if new_alerts %}
 <div class="new-alert-banner">
+    <!-- Auto-mark as seen after 8s so banner disappears on next refresh -->
+    <div hx-post="/alerts/mark-all-seen" hx-trigger="load delay:8s" hx-swap="none" style="display:none;"></div>
     <h3>{{ new_alerts|length }} nouvelle{{ 's' if new_alerts|length > 1 else '' }} alerte{{ 's' if new_alerts|length > 1 else '' }}</h3>
     <table class="alert-table" style="background: transparent;">
         <thead>

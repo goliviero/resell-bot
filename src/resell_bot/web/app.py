@@ -198,6 +198,14 @@ async def new_alerts_fragment(request: Request):
     })
 
 
+@app.post("/alerts/mark-all-seen", response_class=HTMLResponse)
+async def mark_all_seen():
+    """Mark all NEW alerts as SEEN. Called when user clicks bell or after banner timeout."""
+    db = get_db()
+    count = db.mark_all_new_as_seen()
+    return HTMLResponse(f"{count}", status_code=200)
+
+
 # ── Settings ──────────────────────────────────────────────
 
 def _settings_ctx(db, message: str = "", error: str = "") -> dict:

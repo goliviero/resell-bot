@@ -302,8 +302,9 @@
                 <a href="/books" class="{% if active_tab == 'books' %}active{% endif %}">Livres</a>
                 <a href="/settings" class="{% if active_tab == 'settings' %}active{% endif %}">Notifications</a>
                 <a href="/admin" class="{% if active_tab == 'admin' %}active{% endif %}">Admin</a>
-                <a href="/?status=new" class="notif-bell" title="Nouvelles alertes"
-                   hx-get="/bell" hx-trigger="load, every 30s" hx-swap="innerHTML">
+                <a href="/" class="notif-bell" title="Nouvelles alertes"
+                   hx-get="/bell" hx-trigger="load, every 30s" hx-swap="innerHTML"
+                   onclick="fetch('/alerts/mark-all-seen',{method:'POST'}); var b=this.querySelector('.bell-count'); if(b) b.remove();">
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle;">
                         <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/>
                         <path d="M13.73 21a2 2 0 0 1-3.46 0"/>
@@ -317,5 +318,18 @@
     <div class="container">
         {% block content %}{% endblock %}
     </div>
+    <script>
+        // Update browser tab title with alert count (like CaL pinned tab)
+        var _baseTitle = document.title;
+        document.body.addEventListener('htmx:afterSettle', function() {
+            var badge = document.querySelector('.bell-count');
+            var count = badge ? badge.textContent.trim() : '';
+            if (count && parseInt(count) > 0) {
+                document.title = '(' + count + ') ' + _baseTitle;
+            } else {
+                document.title = _baseTitle;
+            }
+        });
+    </script>
 </body>
 </html>
