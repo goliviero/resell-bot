@@ -14,42 +14,16 @@
         Controle du scanner et maintenance. Les actions sont immediates.
     </p>
 
+    <!-- ── Scan Progress (same as dashboard, auto-refresh 5s) ── -->
+    <div id="scan-panel" hx-get="/scan-status" hx-trigger="every 5s" hx-swap="innerHTML">
+        {% include "partials/scan_status.html" %}
+    </div>
+
     <!-- ── Scanner Control ────────────────────────────────── -->
     <div class="settings-section">
         <div class="settings-header">
-            <h3>Scanner</h3>
-            {% if live.get('running') %}
-            <span class="badge badge-new">En cours</span>
-            {% else %}
-            <span class="badge badge-ignored">Arrete</span>
-            {% endif %}
+            <h3>Controle du scanner</h3>
         </div>
-
-        <!-- Live status -->
-        <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.75rem; margin-bottom: 1rem;"
-             hx-get="/admin/scan-info" hx-trigger="every 5s" hx-swap="innerHTML" id="scan-live">
-            <div class="scan-stat">
-                <div style="font-size: 1.4rem; font-weight: 700; color: var(--accent);">{{ live.get('cycle_count', 0) }}</div>
-                <div style="font-size: 0.7rem; color: var(--muted);">CYCLES</div>
-            </div>
-            <div class="scan-stat">
-                <div style="font-size: 1.4rem; font-weight: 700;">{{ live.get('scanned_count', 0) }} / {{ live.get('total_count', 0) }}</div>
-                <div style="font-size: 0.7rem; color: var(--muted);">ISBNs SCANNES</div>
-            </div>
-            <div class="scan-stat">
-                <div style="font-size: 1.4rem; font-weight: 700; color: var(--green);">{{ live.get('deals_found', 0) }}</div>
-                <div style="font-size: 0.7rem; color: var(--muted);">DEALS CE CYCLE</div>
-            </div>
-            <div class="scan-stat">
-                <div style="font-size: 1.4rem; font-weight: 700;">
-                    {% if live.get('last_cycle_duration') %}
-                    {{ '%.0f'|format(live.last_cycle_duration) }}s
-                    {% else %}—{% endif %}
-                </div>
-                <div style="font-size: 0.7rem; color: var(--muted);">DERNIER CYCLE</div>
-            </div>
-        </div>
-
         <div class="actions" style="gap: 0.75rem;">
             {% if live.get('running') %}
             <form method="post" action="/admin/scan/stop" style="display:inline;">
