@@ -1,4 +1,5 @@
-<tr id="alert-{{ alert.id }}">
+{% set is_available = alert.live_availability == 'available' if alert.live_availability is defined else true %}
+<tr id="alert-{{ alert.id }}"{% if not is_available %} style="opacity: 0.5;"{% endif %}>
     <td>
         {% if alert.image_url %}
         <img src="{{ alert.image_url }}" alt="" class="book-thumb" loading="lazy">
@@ -16,6 +17,9 @@
         {% if alert.isbn %}
         <br><small style="color: var(--muted);">{{ alert.isbn }}</small>
         {% endif %}
+        {% if not is_available %}
+        <br><span class="badge" style="background: rgba(239,68,68,0.15); color: var(--red); font-size: 0.65rem;">Indisponible</span>
+        {% endif %}
     </td>
     <td>{{ "%.2f"|format(alert.buy_price) }}&euro; <small style="color:var(--muted);">{{ alert.platform }}</small></td>
     <td>{{ "%.2f"|format(alert.max_buy_price) }}&euro;</td>
@@ -28,10 +32,12 @@
     <td><small style="color:var(--muted);">{{ alert.notified_at[:16] }}</small></td>
     <td>
         <div class="actions">
+            {% if is_available %}
             <a href="{{ alert.url }}" target="_blank" class="btn btn-sm" title="Voir sur Momox" style="text-decoration:none;">Voir sur Momox</a>
-            <form method="post" action="/buy/{{ alert.id }}" style="display: inline;">
-                <button type="submit" class="btn btn-buy btn-sm" title="Acheter sur Momox">ACHETER</button>
-            </form>
+            <a href="{{ alert.url }}" target="_blank" class="btn btn-buy btn-sm" style="text-decoration:none;" title="Acheter sur Momox">ACHETER</a>
+            {% else %}
+            <span style="font-size: 0.75rem; color: var(--red);">Plus en stock</span>
+            {% endif %}
             {% if alert.status != 'bought' %}
             <button class="btn btn-sm"
                     hx-post="/alert/{{ alert.id }}/status/bought"

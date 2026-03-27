@@ -9,3 +9,4 @@
 {"ts": "2026-03-27T12:54:10", "session_id": "2026-03-27T12", "action": "fix", "detail": "Momox search URL: /angebote?searchparam={isbn} (was /?query= which showed homepage). Bell click marks all seen, tab title shows alert count like CaL, banner auto-clears after 8s", "result": "ok"}
 {"ts": "2026-03-27T13:16:04", "session_id": "2026-03-27T13", "action": "feature", "detail": "Scan progress panel added to admin page (reuses scan_status.html partial, auto-refresh 5s)", "result": "ok"}
 {"ts": "2026-03-27T13:34:19", "session_id": "2026-03-27T13", "action": "feature", "detail": "Email test button, SMTP password encryption (Fernet), reset alert status button, Discord-only daily digest, fix broken scheduler digest call", "result": "ok"}
+{"ts": "2026-03-27T13:47:36", "session_id": "2026-03-27T13", "action": "fix", "detail": "Alerts now show live availability from isbn_availability table — unavailable books greyed out, no ACHETER button", "result": "ok"}

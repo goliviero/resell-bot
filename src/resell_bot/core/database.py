@@ -194,14 +194,16 @@ class Database:
         limit: int = 50,
         offset: int = 0,
     ) -> list[dict]:
-        """Get alerts with their listing info, newest first."""
+        """Get alerts with listing info + live availability, newest first."""
         query = """
             SELECT a.id, a.max_buy_price, a.savings,
                    a.notified_at, a.status,
                    l.title, l.price AS buy_price, l.url, l.platform, l.isbn,
-                   l.author, l.image_url, l.condition
+                   l.author, l.image_url, l.condition,
+                   ia.status AS live_availability
             FROM alerts a
             JOIN listings l ON a.listing_url = l.url
+            LEFT JOIN isbn_availability ia ON l.isbn = ia.isbn AND l.platform = ia.platform
         """
         params: list = []
         if status is not None:
@@ -214,14 +216,16 @@ class Database:
         return [dict(r) for r in rows]
 
     def get_alert_by_id(self, alert_id: int) -> dict | None:
-        """Get a single alert with listing info."""
+        """Get a single alert with listing info + live availability."""
         row = self.conn.execute(
             """SELECT a.id, a.max_buy_price, a.savings,
                       a.notified_at, a.status,
                       l.title, l.price AS buy_price, l.url, l.platform, l.isbn,
-                      l.author, l.image_url, l.condition
+                      l.author, l.image_url, l.condition,
+                      ia.status AS live_availability
                FROM alerts a
                JOIN listings l ON a.listing_url = l.url
+               LEFT JOIN isbn_availability ia ON l.isbn = ia.isbn AND l.platform = ia.platform
                WHERE a.id = ?""",
             (alert_id,),
         ).fetchone()

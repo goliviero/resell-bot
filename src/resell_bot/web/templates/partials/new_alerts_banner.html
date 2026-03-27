@@ -32,7 +32,11 @@
                 <td><span class="margin-positive">+{{ "%.2f"|format(alert.savings) }}&euro;</span></td>
                 <td style="font-size: 0.75rem; color: var(--muted);">{{ alert.notified_at[:16] }}</td>
                 <td class="actions">
+                    {% if alert.live_availability == 'available' or alert.live_availability is not defined %}
                     <a href="{{ alert.url }}" target="_blank" class="btn btn-buy btn-sm" style="text-decoration:none;">Acheter</a>
+                    {% else %}
+                    <span style="font-size: 0.7rem; color: var(--red);">Indispo</span>
+                    {% endif %}
                     <a href="/alert/{{ alert.id }}" class="btn btn-sm" style="text-decoration:none;">Voir</a>
                 </td>
             </tr>
