@@ -171,7 +171,11 @@ async def scan_status_fragment(request: Request):
 
 @app.get("/bell", response_class=HTMLResponse)
 async def bell_fragment():
-    """HTMX: return bell icon content with new alert count."""
+    """HTMX: return bell icon content with new alert count.
+
+    When new alerts exist, fires a 'refreshDashboard' event so the
+    banner and stats sections auto-update without a full page reload.
+    """
     db = get_db()
     stats = db.get_alert_stats()
     new_count = stats.get("new", 0)
@@ -179,9 +183,19 @@ async def bell_fragment():
     if new_count > 0:
         return HTMLResponse(
             f'{svg}<span class="bell-count">{new_count}</span>',
-            headers={"HX-Reswap": "innerHTML"},
+            headers={"HX-Trigger": "refreshDashboard"},
         )
     return HTMLResponse(svg)
+
+
+@app.get("/dashboard/new-alerts", response_class=HTMLResponse)
+async def new_alerts_fragment(request: Request):
+    """HTMX: return the new alerts banner partial."""
+    db = get_db()
+    new_alerts = db.get_alerts(status=AlertStatus.NEW, limit=10)
+    return templates.TemplateResponse(request, "partials/new_alerts_banner.html", {
+        "new_alerts": new_alerts,
+    })
 
 
 # ── Settings ──────────────────────────────────────────────

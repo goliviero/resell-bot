@@ -7,53 +7,15 @@
     {% include "partials/scan_status.html" %}
 </div>
 
-<!-- Stats -->
-<div id="stats-bar" hx-get="/stats" hx-trigger="statusChanged from:body" hx-swap="innerHTML">
+<!-- Stats — refreshes when bell detects new alerts -->
+<div id="stats-bar" hx-get="/stats" hx-trigger="refreshDashboard from:body" hx-swap="innerHTML">
     {% include "partials/stats.html" %}
 </div>
 
-<!-- New alerts banner -->
-{% if new_alerts %}
-<div class="new-alert-banner">
-    <h3>{{ new_alerts|length }} nouvelle{{ 's' if new_alerts|length > 1 else '' }} alerte{{ 's' if new_alerts|length > 1 else '' }}</h3>
-    <table class="alert-table" style="background: transparent;">
-        <thead>
-            <tr>
-                <th></th>
-                <th>Livre</th>
-                <th>Prix</th>
-                <th>Economie</th>
-                <th>Date</th>
-                <th>Actions</th>
-            </tr>
-        </thead>
-        <tbody>
-        {% for alert in new_alerts %}
-            <tr>
-                <td>
-                    {% if alert.image_url %}
-                    <img src="{{ alert.image_url }}" class="book-thumb" alt="">
-                    {% endif %}
-                </td>
-                <td>
-                    <a href="/alert/{{ alert.id }}" style="color: var(--green); text-decoration: none; font-weight: 600;">
-                        {{ alert.title[:50] }}{% if alert.title|length > 50 %}...{% endif %}
-                    </a>
-                    <div style="font-size: 0.75rem; color: var(--muted);">{{ alert.author or '' }} — {{ alert.isbn }}</div>
-                </td>
-                <td><strong>{{ "%.2f"|format(alert.buy_price) }}&euro;</strong></td>
-                <td><span class="margin-positive">+{{ "%.2f"|format(alert.savings) }}&euro;</span></td>
-                <td style="font-size: 0.75rem; color: var(--muted);">{{ alert.notified_at[:16] }}</td>
-                <td class="actions">
-                    <a href="{{ alert.url }}" target="_blank" class="btn btn-buy btn-sm" style="text-decoration:none;">Acheter</a>
-                    <a href="/alert/{{ alert.id }}" class="btn btn-sm" style="text-decoration:none;">Voir</a>
-                </td>
-            </tr>
-        {% endfor %}
-        </tbody>
-    </table>
+<!-- New alerts banner — auto-updates when bell detects new alerts -->
+<div id="new-alerts-panel" hx-get="/dashboard/new-alerts" hx-trigger="refreshDashboard from:body" hx-swap="innerHTML">
+    {% include "partials/new_alerts_banner.html" %}
 </div>
-{% endif %}
 
 <!-- Filters -->
 <div class="filters">

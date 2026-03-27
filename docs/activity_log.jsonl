@@ -5,3 +5,4 @@
 {"ts": "2026-03-27T00:13:05", "session_id": "2026-03-27T00", "action": "feat", "detail": "Tests scheduler (12) + notifier (18) + GitHub Actions CI + lockfile + stubs cleanup — 124 tests passing", "result": "ok"}
 {"ts": "2026-03-27T12:17:32", "session_id": "2026-03-27T12", "action": "feat", "detail": "Multi-webhook Discord + multi-email notifs, auth login, admin panel, Docker deploy, fix Momox 404 links — 125 tests passing", "result": "ok"}
 {"ts": "2026-03-27T12:30:35", "session_id": "2026-03-27T12", "action": "feature", "detail": "Notification bell with red badge count, new alerts banner on dashboard, fix Momox search URLs (/?query=), clickable logo, discreet logout icon", "result": "ok"}
+{"ts": "2026-03-27T12:36:46", "session_id": "2026-03-27T12", "action": "feature", "detail": "HTMX auto-refresh dashboard: bell triggers refreshDashboard event, banner + stats update without F5", "result": "ok"}
