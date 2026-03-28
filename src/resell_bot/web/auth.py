@@ -7,6 +7,7 @@ Credentials are set via environment variables:
 All routes except /login require a valid session cookie.
 """
 
+import logging
 import os
 import secrets
 
@@ -14,8 +15,13 @@ from fastapi import Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from starlette.middleware.sessions import SessionMiddleware
 
-# Generate a random secret key at startup (sessions invalidated on restart — fine)
-SESSION_SECRET = os.getenv("SESSION_SECRET", secrets.token_hex(32))
+logger = logging.getLogger(__name__)
+
+# Session secret from env or auto-generated
+SESSION_SECRET = os.getenv("SESSION_SECRET")
+if not SESSION_SECRET:
+    SESSION_SECRET = secrets.token_hex(32)
+    logger.info("SESSION_SECRET not set — generated random key (sessions reset on restart)")
 
 # Credentials from .env
 DASHBOARD_USER = os.getenv("DASHBOARD_USER", "admin")
@@ -30,6 +36,7 @@ def setup_auth(app) -> None:
     async def auth_middleware(request: Request, call_next):
         # Skip auth if no password configured (local dev)
         if not DASHBOARD_PASS:
+            logger.warning("DASHBOARD_PASS not set — dashboard has no authentication!")
             return await call_next(request)
 
         # Allow login page and static assets

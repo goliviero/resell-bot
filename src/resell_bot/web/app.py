@@ -1,5 +1,6 @@
 """FastAPI dashboard for resell-bot — alert viewer + buy actions."""
 
+import sqlite3
 from datetime import datetime
 from pathlib import Path
 
@@ -63,6 +64,7 @@ async def dashboard(
 
     scan_momox = db.get_scan_overview("momox_shop")
     scan_recyclivre = db.get_scan_overview("recyclivre")
+    scan_ammareal = db.get_scan_overview("ammareal")
     live = _scheduler.scan_status if _scheduler else {}
 
     return templates.TemplateResponse(request, "dashboard.html", {
@@ -75,6 +77,8 @@ async def dashboard(
         "platforms": [
             {"name": "Momox", "scan": scan_momox, "live": live.get("momox_shop", {})},
             {"name": "RecycLivre", "scan": scan_recyclivre, "live": live.get("recyclivre", {})},
+            {"name": "Ammareal", "scan": scan_ammareal, "live": live.get("ammareal", {})},
+            {"name": "AbeBooks", "scan": db.get_scan_overview("abebooks"), "live": live.get("abebooks", {})},
         ],
         "active_tab": "dashboard",
     })
@@ -99,8 +103,8 @@ async def books_list(
     )
     total = db.count_books(search=q, availability_filter=dispo)
 
-    # Availability summary
-    scan_overview = db.get_scan_overview("momox_shop")
+    # Cross-platform availability summary
+    scan_overview = db.get_books_overview()
 
     return templates.TemplateResponse(request, "books.html", {
         "books": books,
@@ -172,6 +176,8 @@ async def scan_status_fragment(request: Request):
     platforms = [
         {"name": "Momox", "scan": db.get_scan_overview("momox_shop"), "live": live.get("momox_shop", {})},
         {"name": "RecycLivre", "scan": db.get_scan_overview("recyclivre"), "live": live.get("recyclivre", {})},
+        {"name": "Ammareal", "scan": db.get_scan_overview("ammareal"), "live": live.get("ammareal", {})},
+        {"name": "AbeBooks", "scan": db.get_scan_overview("abebooks"), "live": live.get("abebooks", {})},
     ]
     return templates.TemplateResponse(request, "partials/scan_status.html", {
         "platforms": platforms,
@@ -261,7 +267,7 @@ async def add_discord_webhook(
             _settings_ctx(db, error="URL invalide — doit commencer par https://discord.com/api/webhooks/"))
     try:
         db.add_discord_webhook(name or "Discord", url)
-    except Exception:
+    except sqlite3.IntegrityError:
         return templates.TemplateResponse(request, "settings.html",
             _settings_ctx(db, error="Ce webhook existe deja."))
     return RedirectResponse("/settings?msg=Webhook+Discord+ajoute!", status_code=303)
@@ -347,7 +353,7 @@ async def add_email_subscriber(
             _settings_ctx(db, error="Adresse email invalide."))
     try:
         db.add_email_subscriber(label or "Email", email)
-    except Exception:
+    except sqlite3.IntegrityError:
         return templates.TemplateResponse(request, "settings.html",
             _settings_ctx(db, error="Cet email est deja abonne."))
     return RedirectResponse("/settings?msg=Abonnement+email+ajoute!", status_code=303)
@@ -428,6 +434,8 @@ async def admin_page(
         "platforms": [
             {"name": "Momox", "scan": scan_momox, "live": live.get("momox_shop", {})},
             {"name": "RecycLivre", "scan": db.get_scan_overview("recyclivre"), "live": live.get("recyclivre", {})},
+            {"name": "Ammareal", "scan": db.get_scan_overview("ammareal"), "live": live.get("ammareal", {})},
+            {"name": "AbeBooks", "scan": db.get_scan_overview("abebooks"), "live": live.get("abebooks", {})},
         ],
         "alerts_total": stats.get("total", 0),
         "notif_channels": notifier.get_status_summary(),

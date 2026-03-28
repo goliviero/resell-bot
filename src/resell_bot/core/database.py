@@ -120,6 +120,17 @@ CREATE INDEX IF NOT EXISTS idx_alerts_listing_url ON alerts(listing_url);
 CREATE INDEX IF NOT EXISTS idx_alerts_status ON alerts(status);
 CREATE INDEX IF NOT EXISTS idx_notification_log_sent ON notification_log(sent_at);
 CREATE INDEX IF NOT EXISTS idx_availability_priority ON isbn_availability(priority, platform);
+CREATE INDEX IF NOT EXISTS idx_listings_platform_isbn_price ON listings(platform, isbn, price);
+CREATE INDEX IF NOT EXISTS idx_availability_isbn_platform ON isbn_availability(isbn, platform);
+
+CREATE TABLE IF NOT EXISTS price_history (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    isbn TEXT NOT NULL,
+    platform TEXT NOT NULL,
+    price REAL NOT NULL,
+    recorded_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_price_history_isbn_platform ON price_history(isbn, platform, recorded_at);
 """
 
 # Migrations for existing databases
@@ -478,10 +489,34 @@ class Database:
                    ia.last_checked_at, ia.priority, ia.times_available,
                    ml.url AS momox_url, ml.condition, ml.found_at,
                    rl.status AS recyclivre_status, rl.last_price AS recyclivre_price,
-                   rll.url AS recyclivre_url
+                   rll.url AS recyclivre_url,
+                   am.status AS ammareal_status, am.last_price AS ammareal_price,
+                   aml.url AS ammareal_url,
+                   ab.status AS abebooks_status, ab.last_price AS abebooks_price,
+                   abl.url AS abebooks_url,
+                   -- Best price across all platforms (lowest available)
+                   CASE WHEN COALESCE(ia.last_price, rl.last_price, am.last_price, ab.last_price) IS NULL
+                       THEN NULL
+                       ELSE MIN(
+                           COALESCE(ia.last_price, 999999),
+                           COALESCE(rl.last_price, 999999),
+                           COALESCE(am.last_price, 999999),
+                           COALESCE(ab.last_price, 999999)
+                       )
+                   END AS best_price,
+                   -- Which platform has the best price
+                   CASE
+                       WHEN COALESCE(ia.last_price, rl.last_price, am.last_price, ab.last_price) IS NULL THEN NULL
+                       WHEN ia.last_price IS NOT NULL AND ia.last_price <= COALESCE(rl.last_price, 999999) AND ia.last_price <= COALESCE(am.last_price, 999999) AND ia.last_price <= COALESCE(ab.last_price, 999999) THEN 'momox_shop'
+                       WHEN rl.last_price IS NOT NULL AND rl.last_price <= COALESCE(ia.last_price, 999999) AND rl.last_price <= COALESCE(am.last_price, 999999) AND rl.last_price <= COALESCE(ab.last_price, 999999) THEN 'recyclivre'
+                       WHEN am.last_price IS NOT NULL AND am.last_price <= COALESCE(ia.last_price, 999999) AND am.last_price <= COALESCE(rl.last_price, 999999) AND am.last_price <= COALESCE(ab.last_price, 999999) THEN 'ammareal'
+                       ELSE 'abebooks'
+                   END AS best_platform
             FROM reference_prices rp
             LEFT JOIN isbn_availability ia ON rp.isbn = ia.isbn AND ia.platform = 'momox_shop'
             LEFT JOIN isbn_availability rl ON rp.isbn = rl.isbn AND rl.platform = 'recyclivre'
+            LEFT JOIN isbn_availability am ON rp.isbn = am.isbn AND am.platform = 'ammareal'
+            LEFT JOIN isbn_availability ab ON rp.isbn = ab.isbn AND ab.platform = 'abebooks'
             LEFT JOIN (
                 SELECT isbn, url, condition, found_at,
                        ROW_NUMBER() OVER (PARTITION BY isbn ORDER BY price ASC) AS rn
@@ -494,6 +529,18 @@ class Database:
                 FROM listings
                 WHERE platform = 'recyclivre'
             ) rll ON rp.isbn = rll.isbn AND rll.rn = 1
+            LEFT JOIN (
+                SELECT isbn, url,
+                       ROW_NUMBER() OVER (PARTITION BY isbn ORDER BY price ASC) AS rn
+                FROM listings
+                WHERE platform = 'ammareal'
+            ) aml ON rp.isbn = aml.isbn AND aml.rn = 1
+            LEFT JOIN (
+                SELECT isbn, url,
+                       ROW_NUMBER() OVER (PARTITION BY isbn ORDER BY price ASC) AS rn
+                FROM listings
+                WHERE platform = 'abebooks'
+            ) abl ON rp.isbn = abl.isbn AND abl.rn = 1
         """
         conditions: list[str] = []
         params: list = []
@@ -502,20 +549,20 @@ class Database:
             like = f"%{search}%"
             params.extend([like, like, like])
         if availability_filter == "available":
-            conditions.append("ia.status = 'available'")
+            conditions.append("(ia.status = 'available' OR rl.status = 'available' OR am.status = 'available' OR ab.status = 'available')")
         elif availability_filter == "unavailable":
-            conditions.append("ia.status = 'unavailable' OR ia.status IS NULL")
+            conditions.append("(ia.status IS NULL OR ia.status = 'unavailable') AND (rl.status IS NULL OR rl.status = 'unavailable') AND (am.status IS NULL OR am.status = 'unavailable') AND (ab.status IS NULL OR ab.status = 'unavailable')")
         if conditions:
             query += " WHERE " + " AND ".join(conditions)
 
-        # Default: deals first (momox_price <= max_buy_price), then by margin desc
+        # best_price uses the precomputed column from the SELECT
         sort_map = {
-            "deals": "CASE WHEN ia.last_price IS NOT NULL AND ia.last_price <= rp.max_buy_price THEN 0 ELSE 1 END ASC, (rp.max_buy_price - ia.last_price) DESC",
+            "deals": "CASE WHEN best_price IS NOT NULL AND best_price <= rp.max_buy_price THEN 0 ELSE 1 END ASC, (rp.max_buy_price - best_price) DESC",
             "title": "rp.title ASC",
-            "price_asc": "ia.last_price ASC",
-            "price_desc": "ia.last_price DESC",
-            "margin": "(rp.max_buy_price - ia.last_price) DESC",
-            "available": "CASE WHEN ia.status = 'available' THEN 0 WHEN ia.status = 'unavailable' THEN 1 ELSE 2 END ASC, rp.title ASC",
+            "price_asc": "best_price ASC",
+            "price_desc": "best_price DESC",
+            "margin": "(rp.max_buy_price - best_price) DESC",
+            "available": "CASE WHEN ia.status = 'available' OR rl.status = 'available' OR am.status = 'available' OR ab.status = 'available' THEN 0 WHEN ia.status = 'unavailable' OR rl.status = 'unavailable' OR am.status = 'unavailable' OR ab.status = 'unavailable' THEN 1 ELSE 2 END ASC, rp.title ASC",
         }
         query += f" ORDER BY {sort_map.get(sort, sort_map['deals'])} LIMIT ? OFFSET ?"
         params.extend([limit, offset])
@@ -530,10 +577,13 @@ class Database:
         params: list = []
         if availability_filter:
             query += " LEFT JOIN isbn_availability ia ON rp.isbn = ia.isbn AND ia.platform = 'momox_shop'"
+            query += " LEFT JOIN isbn_availability rl ON rp.isbn = rl.isbn AND rl.platform = 'recyclivre'"
+            query += " LEFT JOIN isbn_availability am ON rp.isbn = am.isbn AND am.platform = 'ammareal'"
+            query += " LEFT JOIN isbn_availability ab ON rp.isbn = ab.isbn AND ab.platform = 'abebooks'"
             if availability_filter == "available":
-                conditions.append("ia.status = 'available'")
+                conditions.append("(ia.status = 'available' OR rl.status = 'available' OR am.status = 'available' OR ab.status = 'available')")
             elif availability_filter == "unavailable":
-                conditions.append("ia.status = 'unavailable' OR ia.status IS NULL")
+                conditions.append("(ia.status IS NULL OR ia.status = 'unavailable') AND (rl.status IS NULL OR rl.status = 'unavailable') AND (am.status IS NULL OR am.status = 'unavailable') AND (ab.status IS NULL OR ab.status = 'unavailable')")
         if search:
             conditions.append("(rp.title LIKE ? OR rp.author LIKE ? OR rp.isbn LIKE ?)")
             like = f"%{search}%"
@@ -584,6 +634,36 @@ class Database:
             "unavailable": row["unavailable"] or 0,
             "unchecked": unchecked,
             "last_scan_at": row["last_scan_at"],
+        }
+
+    def get_books_overview(self) -> dict:
+        """Cross-platform overview: available on ANY platform, deals on ANY platform."""
+        total_watchlist = self.conn.execute("SELECT COUNT(*) AS cnt FROM reference_prices").fetchone()["cnt"]
+
+        row = self.conn.execute("""
+            SELECT
+                SUM(CASE WHEN momox_avail = 1 OR recycl_avail = 1 OR amm_avail = 1 OR abe_avail = 1 THEN 1 ELSE 0 END) AS available,
+                SUM(CASE WHEN momox_avail = 0 AND recycl_avail = 0 AND amm_avail = 0 AND abe_avail = 0 THEN 1 ELSE 0 END) AS unavailable,
+                SUM(CASE WHEN momox_avail IS NULL AND recycl_avail IS NULL AND amm_avail IS NULL AND abe_avail IS NULL THEN 1 ELSE 0 END) AS unchecked
+            FROM (
+                SELECT rp.isbn,
+                    CASE WHEN ia.status = 'available' THEN 1 WHEN ia.status IS NOT NULL THEN 0 ELSE NULL END AS momox_avail,
+                    CASE WHEN rl.status = 'available' THEN 1 WHEN rl.status IS NOT NULL THEN 0 ELSE NULL END AS recycl_avail,
+                    CASE WHEN am.status = 'available' THEN 1 WHEN am.status IS NOT NULL THEN 0 ELSE NULL END AS amm_avail,
+                    CASE WHEN ab.status = 'available' THEN 1 WHEN ab.status IS NOT NULL THEN 0 ELSE NULL END AS abe_avail
+                FROM reference_prices rp
+                LEFT JOIN isbn_availability ia ON rp.isbn = ia.isbn AND ia.platform = 'momox_shop'
+                LEFT JOIN isbn_availability rl ON rp.isbn = rl.isbn AND rl.platform = 'recyclivre'
+                LEFT JOIN isbn_availability am ON rp.isbn = am.isbn AND am.platform = 'ammareal'
+                LEFT JOIN isbn_availability ab ON rp.isbn = ab.isbn AND ab.platform = 'abebooks'
+            )
+        """).fetchone()
+
+        return {
+            "total_watchlist": total_watchlist,
+            "available": row["available"] or 0,
+            "unavailable": row["unavailable"] or 0,
+            "unchecked": row["unchecked"] or 0,
         }
 
     # ── Notification Settings ──────────────────────────────────
@@ -852,6 +932,37 @@ class Database:
         """Count total notification log entries."""
         row = self.conn.execute("SELECT COUNT(*) FROM notification_log").fetchone()
         return row[0]
+
+    # ── Price History ────────────────────────────────────────
+
+    def record_price(self, isbn: str, platform: str, price: float) -> None:
+        """Record a price point. Only records if price changed from last entry."""
+        last = self.conn.execute(
+            "SELECT price FROM price_history WHERE isbn = ? AND platform = ? ORDER BY recorded_at DESC LIMIT 1",
+            (isbn, platform),
+        ).fetchone()
+        if last and last["price"] == price:
+            return  # No change, skip
+        self.conn.execute(
+            "INSERT INTO price_history (isbn, platform, price, recorded_at) VALUES (?, ?, ?, ?)",
+            (isbn, platform, price, datetime.now().isoformat()),
+        )
+        self.conn.commit()
+
+    def get_price_history(self, isbn: str, platform: str | None = None, days: int = 30) -> list[dict]:
+        """Get price history for an ISBN, optionally filtered by platform."""
+        cutoff = (datetime.now() - timedelta(days=days)).isoformat()
+        if platform:
+            rows = self.conn.execute(
+                "SELECT * FROM price_history WHERE isbn = ? AND platform = ? AND recorded_at > ? ORDER BY recorded_at ASC",
+                (isbn, platform, cutoff),
+            ).fetchall()
+        else:
+            rows = self.conn.execute(
+                "SELECT * FROM price_history WHERE isbn = ? AND recorded_at > ? ORDER BY recorded_at ASC",
+                (isbn, cutoff),
+            ).fetchall()
+        return [dict(r) for r in rows]
 
     # ── Cleanup ───────────────────────────────────────────────
 

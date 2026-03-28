@@ -23,9 +23,11 @@ Bot Python de sniping de livres sous-cotés. Scanne les plateformes d'achat (Mom
 - `scrapers/base.py` — ABC: `get_offer(isbn) -> Listing | None`
 - `scrapers/momox_api.py` — Momox Shop via Medimops JSON API — PRIMARY
 - `scrapers/momox.py` — Momox Shop HTML fallback — ARCHIVE
-- `scrapers/recyclivre.py` — RecycLivre scraper (HTML, BeautifulSoup)
+- `scrapers/recyclivre.py` — RecycLivre scraper (HTML, BeautifulSoup, 3 workers)
+- `scrapers/ammareal.py` — Ammareal scraper (PrestaShop HTML, 3 workers)
+- `scrapers/abebooks.py` — AbeBooks scraper (schema.org microdata, 3 workers)
 - `scrapers/{rakuten,fnac,ebay,amazon}.py` — Stubs
-- `scheduler.py` — Per-platform independent scan loops. RecycLivre: 1 worker, 2-4s delay. Alert expiry: 2h.
+- `scheduler.py` — Per-platform independent scan loops. Momox ~3min, RecycLivre ~13min, Ammareal ~5min, AbeBooks ~6min. Alert expiry: 2h.
 - `tampermonkey_autobuy.user.js` — Userscript v1.10. Auto add-to-cart + checkout for RecycLivre and Momox Shop. @grant GM_info for sandbox isolation, @run-at document-start to capture params before React.
 - `utils/http_client.py` — Shared async client (curl_cffi, retry, rate limit, UA rotation)
 - `utils/isbn.py` — ISBN-10/13 validation + conversion

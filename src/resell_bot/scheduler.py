@@ -17,6 +17,8 @@ from resell_bot.core.models import Alert
 from resell_bot.core import price_engine
 from resell_bot.core.notifier import Notifier
 from resell_bot.scrapers.base import BaseScraper
+from resell_bot.scrapers.abebooks import AbebooksScraper
+from resell_bot.scrapers.ammareal import AmmarealScraper
 from resell_bot.scrapers.momox_api import MomoxApiScraper
 from resell_bot.scrapers.recyclivre import RecyclivreScraper
 from resell_bot.utils.http_client import HttpClient
@@ -52,22 +54,42 @@ class ScanScheduler:
             delay_max=self.delay_max,
         )
 
-        # RecycLivre: HTML scraping, slow rate (2-4s delay, 1 worker)
-        # ~0.3 req/s — conservative to avoid Cloudflare challenges
+        # RecycLivre: HTML scraping, no bot protection observed
+        # 0.71s avg response + 1s delay = ~1.7s/req, 3 workers → ~13 min/cycle
         self.http_client_recyclivre = HttpClient(
             user_agents=http_cfg.get("user_agents"),
             timeout=8,
             max_retries=1,
-            delay_min=1.5,
-            delay_max=2.5,
+            delay_min=0.8,
+            delay_max=1.2,
+        )
+
+        # Ammareal: fast HTML (136ms avg, 27KB), no protection
+        self.http_client_ammareal = HttpClient(
+            user_agents=http_cfg.get("user_agents"),
+            timeout=6,
+            max_retries=1,
+            delay_min=0.5,
+            delay_max=1.0,
+        )
+
+        # AbeBooks: fast HTML (172ms avg), no protection, schema.org microdata
+        self.http_client_abebooks = HttpClient(
+            user_agents=http_cfg.get("user_agents"),
+            timeout=6,
+            max_retries=1,
+            delay_min=0.5,
+            delay_max=1.0,
         )
 
         self.scrapers: list[BaseScraper] = [
             MomoxApiScraper(self.http_client),
             RecyclivreScraper(self.http_client_recyclivre),
+            AmmarealScraper(self.http_client_ammareal),
+            AbebooksScraper(self.http_client_abebooks),
         ]
 
-        self.cooldown_hours = settings.get("dedup", {}).get("cooldown_hours", 24)
+        self.cooldown_hours = settings.get("dedup", {}).get("cooldown_hours", 96)
         self.scheduler = AsyncIOScheduler()
         self._running = False
         self._scan_task: asyncio.Task | None = None
@@ -76,7 +98,9 @@ class ScanScheduler:
         # Per-platform concurrency limits
         self._semaphores: dict[str, asyncio.Semaphore] = {
             "momox_shop": asyncio.Semaphore(self.max_workers),
-            "recyclivre": asyncio.Semaphore(2),
+            "recyclivre": asyncio.Semaphore(3),
+            "ammareal": asyncio.Semaphore(3),
+            "abebooks": asyncio.Semaphore(3),
         }
         self._alert_lock = asyncio.Lock()
 
@@ -95,6 +119,8 @@ class ScanScheduler:
         self.scan_status: dict = {
             "momox_shop": {**_empty_status},
             "recyclivre": {**_empty_status},
+            "ammareal": {**_empty_status},
+            "abebooks": {**_empty_status},
         }
         # Convenience — overall running flag
         self._global_running_flag = False
@@ -119,6 +145,8 @@ class ScanScheduler:
             )
             # Always save listing when available (for URL tracking in books page)
             self.db.save_listing(listing)
+            # Track price changes over time
+            self.db.record_price(isbn, scraper.platform_name, listing.price)
             if changed:
                 logger.info("RESTOCK: %s now AVAILABLE on %s at %.2f€",
                             isbn, scraper.platform_name, listing.price)
@@ -126,13 +154,16 @@ class ScanScheduler:
             self.db.upsert_availability(isbn, scraper.platform_name, False)
             return None
 
-        # Only alert on restock (unavailable → available transition).
-        # If the book was already known as available, skip — no repeat notifications.
-        if not changed:
+        # Check deal — price_engine decides if listing price is within budget
+        alert = price_engine.evaluate(listing, max_buy_price)
+        if not alert:
             return None
 
-        # Check deal
-        alert = price_engine.evaluate(listing, max_buy_price)
+        # Dedup: was_recently_alerted checks if we already notified for this URL
+        # within cooldown_hours. This prevents repeat spam while still catching:
+        # - First discovery (new listing)
+        # - Restock after disappearance
+        # - Price drops below budget
         return alert
 
     async def _process_alert(self, alert: Alert) -> None:
@@ -236,11 +267,10 @@ class ScanScheduler:
             ]
             await asyncio.gather(*tasks, return_exceptions=True)
 
-            # Cycle complete
+            # Cycle complete — keep running=True (continuous mode, next cycle starts immediately)
             cycle_end = datetime.now()
             duration = (cycle_end - cycle_start).total_seconds()
             pstatus.update({
-                "running": False,
                 "cycle_count": pstatus["cycle_count"] + 1,
                 "last_completed": cycle_end.isoformat(),
                 "last_cycle_duration": duration,
@@ -424,4 +454,6 @@ class ScanScheduler:
         self.scheduler.shutdown(wait=False)
         await self.http_client.close()
         await self.http_client_recyclivre.close()
+        await self.http_client_ammareal.close()
+        await self.http_client_abebooks.close()
         self.db.close()

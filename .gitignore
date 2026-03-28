@@ -18,3 +18,6 @@ docs/bdd_franck_*.csv
 
 # Claude Code local config
 .claude/
+
+# Windows startup script (machine-specific)
+start_bot.bat

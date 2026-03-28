@@ -63,10 +63,12 @@ class TestSchedulerInit:
     def test_scrapers_list_has_all_platforms(self, tmp_path):
         db = Database(tmp_path / "test.db")
         s = ScanScheduler(_make_settings(), db, None)
-        assert len(s.scrapers) == 2
+        assert len(s.scrapers) == 4
         platforms = [sc.platform_name for sc in s.scrapers]
         assert "momox_shop" in platforms
         assert "recyclivre" in platforms
+        assert "ammareal" in platforms
+        assert "abebooks" in platforms
         db.close()
 
 

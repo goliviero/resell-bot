@@ -61,6 +61,7 @@ class RecyclivreScraper(BaseScraper):
                     "q": isbn,
                     "filter[in_stock]": "in_stock",
                     "sorting[price]": "asc",
+                    "limit": "5",  # Reduce page size ~60% (162KB vs 384KB)
                 },
             )
 

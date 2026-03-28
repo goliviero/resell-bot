@@ -18,3 +18,4 @@
 {"ts": "2026-03-28T01:29:01", "session_id": "2026-03-28T01", "action": "fix", "detail": "Step-based autobuy v2.1 (no false triggers) + alert dedup on restock transition only", "result": "ok"}
 {"ts": "2026-03-28T01:34:45", "session_id": "2026-03-28T01", "action": "chore", "detail": "Clean up: .claude/ to gitignore, remove exemple_alertes_CaL.csv and seed_demo.py", "result": "ok"}
 {"ts": "2026-03-28T01:44:54", "session_id": "2026-03-28T01", "action": "fix", "detail": "RecycLivre scan: 2 workers, 1.5-2.5s delay, 8s timeout, 1 retry — cycle ~15min vs 333min before", "result": "ok"}
+{"ts": "2026-03-28T21:34:59", "session_id": "2026-03-28T21", "action": "feat", "detail": "Ammareal + AbeBooks scrapers, price history, audit fixes, RecycLivre 3 workers (13min cycle), dead code cleanup", "result": "ok"}

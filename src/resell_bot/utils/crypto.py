@@ -23,9 +23,14 @@ def _get_fernet() -> Fernet | None:
     if _fernet is not None:
         return _fernet
 
-    secret = os.getenv("ENCRYPTION_KEY") or os.getenv("DASHBOARD_PASS")
+    secret = os.getenv("ENCRYPTION_KEY")
     if not secret:
-        return None
+        secret = os.getenv("DASHBOARD_PASS")
+        if secret:
+            logger.info("ENCRYPTION_KEY not set — deriving from DASHBOARD_PASS")
+        else:
+            secret = "resell-bot-default-key"
+            logger.warning("Neither ENCRYPTION_KEY nor DASHBOARD_PASS set — using default key (NOT SECURE)")
 
     derived = hashlib.pbkdf2_hmac("sha256", secret.encode(), _SALT, 100_000)
     key = base64.urlsafe_b64encode(derived[:32])

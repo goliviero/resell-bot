@@ -64,7 +64,7 @@
             <th>Titre</th>
             <th>Auteur</th>
             <th style="font-family: monospace;">ISBN</th>
-            <th>Prix Momox</th>
+            <th>Prix en ligne</th>
             <th>Budget</th>
             <th>Marge</th>
             <th>Etat</th>
@@ -74,7 +74,7 @@
     </thead>
     <tbody>
         {% for book in books %}
-        <tr{% if book.momox_price is not none and book.max_buy_price is not none and book.momox_price <= book.max_buy_price %} style="background: rgba(34,197,94,0.08);"{% endif %}>
+        <tr{% if book.best_price is not none and book.max_buy_price is not none and book.best_price <= book.max_buy_price %} style="background: rgba(34,197,94,0.08);"{% endif %}>
             <!-- Availability indicator — per platform -->
             <td style="text-align: center; font-size: 0.8rem; white-space: nowrap;">
                 {% if book.momox_status == 'available' %}
@@ -91,6 +91,20 @@
                 {% else %}
                 <span title="RecycLivre: non scanne" style="color: var(--muted); margin-left: 0.3rem;">R—</span>
                 {% endif %}
+                {% if book.ammareal_status == 'available' %}
+                <span title="Ammareal: dispo" style="color: var(--green); margin-left: 0.3rem;">A&#10003;</span>
+                {% elif book.ammareal_status == 'unavailable' %}
+                <span title="Ammareal: indispo" style="color: var(--red); margin-left: 0.3rem;">A&#10007;</span>
+                {% else %}
+                <span title="Ammareal: non scanne" style="color: var(--muted); margin-left: 0.3rem;">A—</span>
+                {% endif %}
+                {% if book.abebooks_status == 'available' %}
+                <span title="AbeBooks: dispo" style="color: var(--green); margin-left: 0.3rem;">Ab&#10003;</span>
+                {% elif book.abebooks_status == 'unavailable' %}
+                <span title="AbeBooks: indispo" style="color: var(--red); margin-left: 0.3rem;">Ab&#10007;</span>
+                {% else %}
+                <span title="AbeBooks: non scanne" style="color: var(--muted); margin-left: 0.3rem;">Ab—</span>
+                {% endif %}
             </td>
             <td>
                 <strong>{{ book.title[:60] }}{% if book.title and book.title|length > 60 %}...{% endif %}</strong>
@@ -98,8 +112,11 @@
             <td style="color: var(--muted); max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{{ book.author or "—" }}</td>
             <td style="font-family: monospace; font-size: 0.78rem;">{{ book.isbn }}</td>
             <td>
-                {% if book.momox_price is not none %}
-                    <strong>{{ "%.2f"|format(book.momox_price) }}&euro;</strong>
+                {% if book.best_price is not none %}
+                    <strong>{{ "%.2f"|format(book.best_price) }}&euro;</strong>
+                    <span style="font-size: 0.65rem; color: var(--muted);">
+                        {% if book.best_platform == 'momox_shop' %}M{% elif book.best_platform == 'recyclivre' %}R{% elif book.best_platform == 'ammareal' %}A{% elif book.best_platform == 'abebooks' %}Ab{% endif %}
+                    </span>
                 {% else %}
                     <span style="color: var(--muted);">—</span>
                 {% endif %}
@@ -112,8 +129,8 @@
                 {% endif %}
             </td>
             <td>
-                {% if book.momox_price is not none and book.max_buy_price is not none %}
-                    {% set margin = book.max_buy_price - book.momox_price %}
+                {% if book.best_price is not none and book.max_buy_price is not none %}
+                    {% set margin = book.max_buy_price - book.best_price %}
                     {% if margin > 0 %}
                         <span class="margin-positive">+{{ "%.2f"|format(margin) }}&euro;</span>
                     {% elif margin == 0 %}
@@ -147,6 +164,20 @@
                 <a href="{{ recyclivre_link }}" target="_blank" class="btn btn-sm" style="text-decoration:none; font-size:0.7rem; background: rgba(34,197,94,0.15); border-color: var(--green); color: var(--green);">RecycLivre {{ "%.2f"|format(book.recyclivre_price) }}&euro;</a>
                 {% else %}
                 <a href="{{ recyclivre_search }}" target="_blank" class="btn btn-sm" style="text-decoration:none; font-size:0.7rem; opacity: 0.35;">RecycLivre</a>
+                {% endif %}
+                {% set ammareal_search = "https://www.ammareal.fr/recherche?controller=search&s=" ~ book.isbn %}
+                {% set ammareal_link = book.ammareal_url if book.ammareal_url else ammareal_search %}
+                {% if book.ammareal_status == 'available' %}
+                <a href="{{ ammareal_link }}" target="_blank" class="btn btn-sm" style="text-decoration:none; font-size:0.7rem; background: rgba(34,197,94,0.15); border-color: var(--green); color: var(--green);">Ammareal {{ "%.2f"|format(book.ammareal_price) }}&euro;</a>
+                {% else %}
+                <a href="{{ ammareal_search }}" target="_blank" class="btn btn-sm" style="text-decoration:none; font-size:0.7rem; opacity: 0.35;">Ammareal</a>
+                {% endif %}
+                {% set abebooks_search = "https://www.abebooks.fr/servlet/SearchResults?kn=" ~ book.isbn ~ "&sortby=1" %}
+                {% set abebooks_link = book.abebooks_url if book.abebooks_url else abebooks_search %}
+                {% if book.abebooks_status == 'available' %}
+                <a href="{{ abebooks_link }}" target="_blank" class="btn btn-sm" style="text-decoration:none; font-size:0.7rem; background: rgba(34,197,94,0.15); border-color: var(--green); color: var(--green);">AbeBooks {{ "%.2f"|format(book.abebooks_price) }}&euro;</a>
+                {% else %}
+                <a href="{{ abebooks_search }}" target="_blank" class="btn btn-sm" style="text-decoration:none; font-size:0.7rem; opacity: 0.35;">AbeBooks</a>
                 {% endif %}
                 {% if book.cal_url %}
                 <a href="{{ book.cal_url }}" target="_blank" class="btn btn-sm" style="text-decoration:none; font-size:0.7rem;">CaL</a>
