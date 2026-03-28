@@ -17,3 +17,4 @@
 {"ts": "2026-03-27T17:48:11", "session_id": "2026-03-27T17", "action": "feat", "detail": "Tampermonkey autobuy (webbrowser.open + userscript v1.10), RecycLivre scraper, per-platform scheduler loops (RecycLivre 1w/2-4s), alert expiry 2h, notification log in DB+admin, email/Discord rework, test_buyer + test_recyclivre — DEC-012 added", "result": "ok"}
 {"ts": "2026-03-28T01:29:01", "session_id": "2026-03-28T01", "action": "fix", "detail": "Step-based autobuy v2.1 (no false triggers) + alert dedup on restock transition only", "result": "ok"}
 {"ts": "2026-03-28T01:34:45", "session_id": "2026-03-28T01", "action": "chore", "detail": "Clean up: .claude/ to gitignore, remove exemple_alertes_CaL.csv and seed_demo.py", "result": "ok"}
+{"ts": "2026-03-28T01:44:54", "session_id": "2026-03-28T01", "action": "fix", "detail": "RecycLivre scan: 2 workers, 1.5-2.5s delay, 8s timeout, 1 retry — cycle ~15min vs 333min before", "result": "ok"}

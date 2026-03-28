@@ -56,10 +56,10 @@ class ScanScheduler:
         # ~0.3 req/s — conservative to avoid Cloudflare challenges
         self.http_client_recyclivre = HttpClient(
             user_agents=http_cfg.get("user_agents"),
-            timeout=http_cfg.get("timeout_seconds", 15),
-            max_retries=http_cfg.get("max_retries", 2),
-            delay_min=2.0,
-            delay_max=4.0,
+            timeout=8,
+            max_retries=1,
+            delay_min=1.5,
+            delay_max=2.5,
         )
 
         self.scrapers: list[BaseScraper] = [
@@ -76,7 +76,7 @@ class ScanScheduler:
         # Per-platform concurrency limits
         self._semaphores: dict[str, asyncio.Semaphore] = {
             "momox_shop": asyncio.Semaphore(self.max_workers),
-            "recyclivre": asyncio.Semaphore(1),
+            "recyclivre": asyncio.Semaphore(2),
         }
         self._alert_lock = asyncio.Lock()
 
