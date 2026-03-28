@@ -126,6 +126,11 @@ class ScanScheduler:
             self.db.upsert_availability(isbn, scraper.platform_name, False)
             return None
 
+        # Only alert on restock (unavailable → available transition).
+        # If the book was already known as available, skip — no repeat notifications.
+        if not changed:
+            return None
+
         # Check deal
         alert = price_engine.evaluate(listing, max_buy_price)
         return alert
