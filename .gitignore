@@ -16,5 +16,5 @@ scripts/activity_log.py
 # Brother's real watchlist CSV exports — contains personal data, never commit
 docs/bdd_franck_*.csv
 
-# Claude Code local settings (VS Code workaround)
-.claude/settings.json
+# Claude Code local config
+.claude/
